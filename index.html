@@ -452,6 +452,17 @@
     </div>
     <div id="personaFormView" style="display:none">
       <h2 id="personaFormTitle">새 페르소나</h2>
+      <div class="field"><label>사진</label>
+        <div class="photo-row">
+          <div class="photo-preview" id="pPhotoPreview">🙋</div>
+          <div>
+            <button class="btn-mini" onclick="document.getElementById('pPhotoInput').click()">사진 선택</button>
+            <button class="btn-mini" onclick="clearPersonaPhoto()">제거</button>
+            <input type="file" id="pPhotoInput" accept="image/*" style="display:none">
+            <div class="memo-hint">대화 화면에서 내 메시지 옆에 표시돼요. 작게 압축해 브라우저에 저장됩니다.</div>
+          </div>
+        </div>
+      </div>
       <div class="field"><label>이름 *</label><input type="text" id="pName" placeholder="예: 지민 (교환학생)"></div>
       <div class="field"><label>설정 *</label><textarea id="pDesc" style="min-height:110px" placeholder="예: 한국에서 온 22살 교환학생. 이 언어를 배운 지 6개월이라 서툴고 실수가 잦지만 열심히 하려고 한다. 낯을 가리지만 친해지면 수다스럽다. 매운 음식을 좋아하고 커피는 못 마신다."></textarea>
         <div class="memo-hint">국적·나이·직업 같은 배경, 언어 실력, 성격, 취향 등 상대가 알아줬으면 하는 것을 자유롭게 적으세요.</div>
@@ -901,6 +912,12 @@ async function updateStorageInfo(){
 const getSession = () => sessions.find(s=>s.id===activeId);
 const langOf = id => LANGUAGES.find(l=>l.id===id) || LANGUAGES[0];
 const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// 내 메시지 옆 사진: 이 대화에 고른 페르소나에 사진이 있을 때만
+function myPhoto(s){
+  if(!s || !s.personaId) return null;
+  const p = personas.find(x=>x.id===s.personaId);
+  return p && p.photo ? p.photo : null;
+}
 function avatarInner(s){
   if(s.charId){
     const c = characters.find(x=>x.id===s.charId);
@@ -1202,11 +1219,15 @@ function messageNode(m, idx, s){
     tools.appendChild(btn); wrap.appendChild(tools);
   }else{
     const row=document.createElement('div'); row.className='row me';
+    const photo = myPhoto(s);
+    if(photo) row.innerHTML = `<div class="avatar"><img src="${photo}" alt=""></div>`;
     const col=document.createElement('div'); col.className='bubble-col';
     const bub=document.createElement('div'); bub.className='bubble'; bub.textContent=m.content;
     col.appendChild(bub); row.appendChild(col); wrap.appendChild(row);
     if(!m.review){
       const tools=document.createElement('div'); tools.className='tools';
+      tools.style.justifyContent='flex-end';
+      if(photo) tools.style.marginRight='41px';
       const rb=document.createElement('button'); rb.className='tool-btn'; rb.textContent='✏️ 교정받기';
       rb.onclick=()=>reviewOne(idx);
       tools.appendChild(rb); wrap.appendChild(tools);
@@ -2276,7 +2297,7 @@ function showPersonaList(){
   for(const p of personas){
     const div = document.createElement('div'); div.className='char-item';
     div.innerHTML = `
-      <div class="avatar">🙋</div>
+      <div class="avatar">${p.photo?`<img src="${p.photo}" alt="">`:'🙋'}</div>
       <div class="cmeta"><div class="cname">${esc(p.name)}</div><div class="ckey">${esc(p.desc||'')}</div></div>
       <div class="cbtns"><button class="pedit">수정</button><button class="cdel">삭제</button></div>`;
     div.querySelector('.pedit').onclick = ()=>openPersonaForm(p.id);
@@ -2294,8 +2315,21 @@ function openPersonaForm(id){
   $('personaFormTitle').textContent = p ? '페르소나 수정' : '새 페르소나';
   $('pName').value = p?p.name:'';
   $('pDesc').value = p?(p.desc||''):'';
+  pendingPersonaPhoto = p ? (p.photo||null) : null;
+  renderPersonaPhoto();
   $('personaListView').style.display='none'; $('personaFormView').style.display='block';
 }
+let pendingPersonaPhoto = null;
+function renderPersonaPhoto(){
+  $('pPhotoPreview').innerHTML = pendingPersonaPhoto ? `<img src="${pendingPersonaPhoto}" alt="">` : '🙋';
+}
+function clearPersonaPhoto(){ pendingPersonaPhoto = null; renderPersonaPhoto(); }
+$('pPhotoInput').addEventListener('change', async e=>{
+  const file = e.target.files[0]; e.target.value='';
+  if(!file) return;
+  try{ pendingPersonaPhoto = await resizeImage(file, 192); renderPersonaPhoto(); }
+  catch(err){ alert('이미지를 읽지 못했어요. 다른 파일로 시도해 주세요.'); }
+});
 function savePersona(){
   const name = $('pName').value.trim();
   const desc = $('pDesc').value.trim();
@@ -2303,12 +2337,12 @@ function savePersona(){
   if(!desc){ $('pDesc').focus(); return; }
   if(editingPersonaId){
     const p = personas.find(x=>x.id===editingPersonaId);
-    p.name=name; p.desc=desc;
+    p.name=name; p.desc=desc; p.photo=pendingPersonaPhoto;
     for(const s of sessions) if(s.personaId===editingPersonaId) s.personaProfile={name,desc};
   }else{
-    personas.push({id:'p'+Date.now().toString(36), name, desc});
+    personas.push({id:'p'+Date.now().toString(36), name, desc, photo:pendingPersonaPhoto});
   }
-  save(); showPersonaList();
+  save(); showPersonaList(); renderChat();
 }
 
 /* ---------- settings ---------- */
