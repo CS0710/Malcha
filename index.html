@@ -25,6 +25,30 @@
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
+  /* ---------- 테마: 색 변수만 덮어씀 ---------- */
+  :root{--them-border:var(--line);--chat-sub:var(--sub)}
+  html[data-theme="kakao"]{
+    --bg:#BACEE0; --me:#FEE500; --me-ink:#191919; --them:#FFFFFF; --them-border:transparent; --narr:#4A5868;
+    --accent:#3B4A5A; --accent-dk:#2C3946; --accent-soft:#E2EBF3; --chat-sub:#4F5D6B; --head:#BACEE0; --head-line:#A9BED1}
+  html[data-theme="blue"]{
+    --bg:#FFFFFF; --me:#0A6AE0; --me-ink:#FFFFFF; --them:#E9E9EB; --them-border:transparent; --narr:#7A7F87;
+    --accent:#0A6FE0; --accent-dk:#0858B4; --accent-soft:#E6F0FD}
+  html[data-theme="sakura"]{
+    --bg:#FBEEF1; --me:#C24B72; --me-ink:#FFFFFF; --them:#FFFFFF; --them-border:#F3DCE3; --narr:#9E6F80; --line:#F0E1E6;
+    --accent:#C9567A; --accent-dk:#A8435F; --accent-soft:#FBE3EA}
+  html[data-theme="lavender"]{
+    --bg:#F0EDF8; --me:#7B66C8; --me-ink:#FFFFFF; --them:#FFFFFF; --them-border:#E3DEF2; --narr:#7C7392; --line:#E6E2F0;
+    --accent:#6A55B5; --accent-dk:#554395; --accent-soft:#ECE7F8}
+  html[data-theme="cream"]{
+    --bg:#F5EFE3; --panel:#FFFCF6; --me:#A5653A; --me-ink:#FFFFFF; --them:#FFFDF8; --them-border:#EADFCB; --narr:#8A7458; --line:#EADFCC;
+    --accent:#9A602F; --accent-dk:#7E4E26; --accent-soft:#F4E7D4}
+  .theme-sw{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .theme-sw button{border:2px solid var(--line);border-radius:12px;padding:6px 6px 7px;background:var(--panel);font-size:12px;font-weight:600;color:var(--ink);text-align:center}
+  .theme-sw button.sel{border-color:var(--accent)}
+  .theme-sw .tp{height:44px;border-radius:8px;margin-bottom:5px;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:0 8px}
+  .theme-sw .tp i{display:block;height:9px;border-radius:5px}
+  .theme-sw .tp i:first-child{width:55%}
+  .theme-sw .tp i:last-child{width:45%;align-self:flex-end}
   body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidden}
   button{font-family:inherit;cursor:pointer;border:none;background:none}
   input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
@@ -62,7 +86,7 @@
 
   /* ---------- Main ---------- */
   .main{flex:1;display:flex;flex-direction:column;min-width:0}
-  .chat-head{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--line);min-height:64px}
+  .chat-head{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--head,var(--panel));border-bottom:1px solid var(--head-line,var(--line));min-height:64px}
   .chat-head .avatar{width:40px;height:40px;border-radius:50%;background:#F0EDE6;display:flex;align-items:center;justify-content:center;font-size:20px}
   .chat-head .title{font-size:15px;font-weight:700}
   .chat-head .subtitle{font-size:12px;color:var(--sub);margin-top:1px}
@@ -77,7 +101,7 @@
   .bubble-col{max-width:72%;display:flex;flex-direction:column;gap:4px}
   .row.me .bubble-col{align-items:flex-end}
   .bubble{padding:10px 14px;border-radius:var(--radius);font-size:14.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;position:relative}
-  .row.them .bubble{background:var(--them);border:1px solid var(--line);border-bottom-left-radius:5px}
+  .row.them .bubble{background:var(--them);border:1px solid var(--them-border);border-bottom-left-radius:5px}
   .row.me .bubble{background:var(--me);color:var(--me-ink);border-bottom-right-radius:5px}
 
   /* narration — the novel interlude */
@@ -86,7 +110,7 @@
 
   .tools{display:flex;gap:6px;margin-top:2px}
   .row.me .tools{justify-content:flex-end}
-  .tool-btn{font-size:11px;color:var(--sub);padding:3px 8px;border-radius:8px;background:transparent;font-weight:600}
+  .tool-btn{font-size:11px;color:var(--chat-sub);padding:3px 8px;border-radius:8px;background:transparent;font-weight:600}
   .tool-btn:hover{background:#E5E8E9;color:var(--ink)}
   .note{max-width:72%;margin-top:4px;background:#FBF7EA;border:1px solid #EBE2C4;border-radius:12px;padding:10px 13px;font-size:12.5px;line-height:1.65;color:#5C543B;white-space:pre-wrap;word-break:break-word}
   .note .note-tag{font-size:10px;font-weight:800;color:#A68F4C;letter-spacing:.06em;display:block;margin-bottom:4px}
@@ -629,6 +653,9 @@
 <div class="overlay" id="settingsOverlay">
   <div class="modal">
     <h2>설정</h2>
+    <div class="field"><label>🎨 테마</label>
+      <div class="theme-sw" id="themeSw"></div>
+    </div>
     <div class="field"><label>모델 실행 방식</label>
       <div class="seg" id="provSeg">
         <button data-v="local" class="sel">💻 로컬 (Ollama)</button>
@@ -2369,6 +2396,7 @@ function openSettings(){
   $('setNoThink').checked = !!settings.noThink;
   $('setLight').checked = !!settings.lightMode;
   updateStorageInfo();
+  renderThemeSw();
   $('testResult').textContent='';
   populateModelSelect([settings.model].filter(Boolean));
   refreshModels(true);
@@ -2501,6 +2529,34 @@ function saveSettings(){
   save(); closeSettings(); renderChat();
 }
 
+/* ---------- 테마 ---------- */
+const THEMES = [
+  {id:'matcha',   name:'🍵 말차',   bg:'#EDEFF0', them:'#FFFFFF', me:'#2F6D5A', bar:'#2F6D5A'},
+  {id:'kakao',    name:'💛 카톡풍', bg:'#BACEE0', them:'#FFFFFF', me:'#FEE500', bar:'#BACEE0'},
+  {id:'blue',     name:'💙 블루',   bg:'#FFFFFF', them:'#E9E9EB', me:'#0A6AE0', bar:'#0A6FE0'},
+  {id:'sakura',   name:'🌸 벚꽃',   bg:'#FBEEF1', them:'#FFFFFF', me:'#C24B72', bar:'#C9567A'},
+  {id:'lavender', name:'💜 라벤더', bg:'#F0EDF8', them:'#FFFFFF', me:'#7B66C8', bar:'#6A55B5'},
+  {id:'cream',    name:'🍯 크림',   bg:'#F5EFE3', them:'#FFFDF8', me:'#A5653A', bar:'#9A602F'},
+];
+function applyTheme(id){
+  const t = THEMES.find(x=>x.id===id) || THEMES[0];
+  if(t.id==='matcha') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t.id);
+  const meta = document.querySelector('meta[name="theme-color"]'); if(meta) meta.content = t.bar;
+  try{ localStorage.setItem('malcha_theme', t.id); }catch(e){}   // 다음에 열 때 깜빡임 없이 바로 적용하려는 작은 사본
+}
+function renderThemeSw(){
+  const box = $('themeSw'); box.innerHTML = '';
+  const cur = settings.theme || 'matcha';
+  for(const t of THEMES){
+    const b = document.createElement('button'); b.type='button';
+    b.className = t.id===cur ? 'sel' : '';
+    b.innerHTML = `<div class="tp" style="background:${t.bg};${t.bg==='#FFFFFF'?'box-shadow:inset 0 0 0 1px #E2E5E6':''}"><i style="background:${t.them};${t.them==='#FFFFFF'?'box-shadow:0 0 0 1px rgba(0,0,0,.08)':''}"></i><i style="background:${t.me}"></i></div>${t.name}`;
+    b.onclick = ()=>{ settings.theme = t.id; applyTheme(t.id); save(); renderThemeSw(); };
+    box.appendChild(b);
+  }
+}
+
 /* ---------- misc UI ---------- */
 function toggleSidebar(force){
   const sb=$('sidebar');
@@ -2534,8 +2590,10 @@ ta.addEventListener('keydown', e=>{
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click', e=>{ if(e.target===o) o.classList.remove('show'); }));
 
 /* ---------- init ---------- */
+try{ applyTheme(localStorage.getItem('malcha_theme') || 'matcha'); }catch(e){}
 (async()=>{
   await initStorage();
+  applyTheme(settings.theme || 'matcha');
   renderSidebar(); renderChat();
   try{ await fetchModels(); $('connDot').className='conn-dot ok'; }catch(e){ $('connDot').className='conn-dot bad'; }
 })();
