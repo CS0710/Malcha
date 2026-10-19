@@ -912,25 +912,52 @@ function avatarInner(s){
 /* ---------- prompts ---------- */
 /* ---------- 로어북: 키워드 발동 시에만 설정 주입 ---------- */
 const LORE_CHAR_BUDGET = 4000;   // 한 번에 주입되는 로어 총량 제한(문자 수)
+// 키워드 매칭: 영어 등 알파벳 키워드는 '단어 단위'로 (cat → cat, cats, cat's 는 걸리고 education 은 안 걸림)
+//              한글 등은 조사가 붙으므로 기존처럼 '포함'으로
+const kwMatcherCache = new Map();
+function kwMatcher(k){
+  let f = kwMatcherCache.get(k);
+  if(f) return f;
+  if(/^[\x00-\x7f]+$/.test(k)){
+    const re = new RegExp("(^|[^a-z0-9])" + k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + "(s|es|'s)?(?![a-z0-9])");
+    f = t => re.test(t);
+  }else{
+    f = t => t.includes(k);
+  }
+  kwMatcherCache.set(k, f);
+  return f;
+}
+const normText = t => (t||'').toLowerCase().replace(/[\u2018\u2019]/g, "'");
 function activeLore(s){
   if(!lorebook.length) return [];
-  const recent = (
-    s.messages.filter(m=>!m.archived && !m.hidden).slice(-6).map(m=>m.content).join('\n')
+  const msgs = s.messages.filter(m=>!m.archived && !m.hidden);
+  // 가까운 내용일수록 높은 점수: 방금 내 메시지 > 최근 2개 > 최근 6개·기억 요약·시나리오
+  const lastUser = normText([...msgs].reverse().find(m=>m.role==='user')?.content);
+  const last2 = normText(msgs.slice(-2).map(m=>m.content).join('\n'));
+  const recent = normText(
+    msgs.slice(-6).map(m=>m.content).join('\n')
     + '\n' + (s.memory||'') + '\n' + (s.scenario||'') + '\n' + (s.detail||'')
-  ).toLowerCase();
+  );
   const hits = [];
   for(const e of lorebook){
     if(e.enabled===false) continue;
     if(e.charId && e.charId!==s.charId) continue;
-    if(e.always){ hits.push(e); continue; }
-    const kws = (e.keywords||'').split(',').map(k=>k.trim().toLowerCase()).filter(Boolean);
-    if(kws.length && kws.some(k=>recent.includes(k))) hits.push(e);
+    if(e.always){ hits.push({e, score:1e6}); continue; }
+    const kws = (e.keywords||'').split(',').map(k=>normText(k.trim())).filter(Boolean);
+    let score = 0;
+    for(const k of kws){
+      const m = kwMatcher(k);
+      if(m(lastUser)) score += 100;
+      else if(m(last2)) score += 10;
+      else if(m(recent)) score += 1;
+    }
+    if(score) hits.push({e, score});
   }
-  hits.sort((a,b)=>(b.always?1:0)-(a.always?1:0));   // 항상 포함 항목 우선
+  hits.sort((a,b)=> b.score - a.score);   // 항상 포함 → 방금 언급된 것 → 최근 언급 순
   const out=[]; let used=0;
-  for(const e of hits){
+  for(const {e} of hits){
     const len = (e.title+e.content).length;
-    if(used+len > LORE_CHAR_BUDGET) break;
+    if(used+len > LORE_CHAR_BUDGET) continue;   // 긴 항목 하나 때문에 뒤의 짧은 항목까지 빠지지 않게
     out.push(e); used += len;
   }
   return out;
@@ -2131,6 +2158,7 @@ const LORE_MD_TEMPLATE = `# 로어북 형식 안내
 # - 키워드: 콤마로 구분해서 적으세요. 이 중 하나라도 대화에 등장하면 발동합니다.
 # - 항상: true 로 적으면 키워드 없이 매 턴 항상 포함됩니다 (핵심 설정용, 적게 쓰는 걸 추천).
 # - 두 줄 다 생략 가능하지만, "항상: true"가 아니면 키워드가 최소 1개는 있어야 발동합니다.
+# - 캐릭터: 이름 을 적으면 그 캐릭터와의 대화에서만 발동합니다 (생략하면 모든 대화 공통). 캐릭터는 미리 만들어 두세요.
 # 이 안내 블록(# 로 시작하는 줄들)은 무시되니 지우지 않아도 됩니다. 아래 예시를 참고해서 이어서 작성하세요.
 
 # 벚꽃마을의 축제
@@ -2161,6 +2189,7 @@ function parseLoreMd(text){
         title: cur.title,
         keywords: cur.keywords,
         always: cur.always,
+        charName: cur.charName,
         content: cur.contentLines.join('\n').trim()
       });
     }
@@ -2170,7 +2199,7 @@ function parseLoreMd(text){
     const h = line.match(/^#{1,3}\s+(.+)$/);
     if(h){
       flush();
-      cur = {title: h[1].trim(), keywords:'', always:false, contentLines:[]};
+      cur = {title: h[1].trim(), keywords:'', always:false, charName:'', contentLines:[]};
       continue;
     }
     if(!cur) continue;   // 첫 제목 전의 안내/잡문은 무시
@@ -2178,6 +2207,8 @@ function parseLoreMd(text){
     const al = line.match(/^\s*(항상|always)\s*[:：]\s*(true|참|예|yes)\s*$/i);
     if(kw && !cur.contentLines.length){ cur.keywords = kw[2].trim(); continue; }
     if(al && !cur.contentLines.length){ cur.always = true; continue; }
+    const ch = line.match(/^\s*(캐릭터|character)\s*[:：]\s*(.+?)\s*$/i);
+    if(ch && !cur.contentLines.length){ cur.charName = ch[2]; continue; }
     cur.contentLines.push(line);
   }
   flush();
@@ -2193,15 +2224,23 @@ $('loreMdInput').addEventListener('change', async e=>{
     const entries = parseLoreMd(text);
     if(!entries.length){ alert('파일에서 로어 항목을 찾지 못했어요. "📄 형식 받기"로 예시 파일을 받아 형식을 확인해 주세요.'); return; }
     let added = 0, updated = 0;
+    const missingChars = new Set();
     for(const en of entries){
       if(!en.always && !en.keywords){ continue; }   // 발동 조건 없는 항목은 건너뜀
-      const existing = lorebook.find(x=>x.title===en.title);
-      const data = {title:en.title, keywords:en.keywords, content:en.content, always:en.always, charId:'', enabled:true};
+      let charId = '';
+      if(en.charName){
+        const c = characters.find(x=>x.name.trim().toLowerCase()===en.charName.trim().toLowerCase());
+        if(c) charId = c.id; else missingChars.add(en.charName);
+      }
+      // 같은 제목이라도 캐릭터가 다르면 별개 항목
+      const existing = lorebook.find(x=>x.title===en.title && (x.charId||'')===charId);
+      const data = {title:en.title, keywords:en.keywords, content:en.content, always:en.always, charId, enabled:true};
       if(existing){ Object.assign(existing, data); updated++; }
       else { lorebook.push({id:'l'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), ...data}); added++; }
     }
     save(); showLoreList();
-    alert(`불러오기 완료! 새 항목 ${added}개, 갱신 ${updated}개${entries.length>added+updated ? `\n(발동 조건이 없어 건너뛴 항목 ${entries.length-added-updated}개)`:''}`);
+    alert(`불러오기 완료! 새 항목 ${added}개, 갱신 ${updated}개${entries.length>added+updated ? `\n(발동 조건이 없어 건너뛴 항목 ${entries.length-added-updated}개)`:''}`
+      + (missingChars.size ? `\n\n⚠️ 캐릭터 '${[...missingChars].join(', ')}'를 찾지 못해 해당 항목은 모든 대화 공통으로 넣었어요. 캐릭터를 먼저 만든 뒤 다시 불러오면 그 캐릭터 전용으로 바뀌어요.` : ''));
   }catch(err){
     alert('파일을 읽지 못했어요. .md 또는 텍스트 파일인지 확인해 주세요.');
   }
