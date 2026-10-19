@@ -1043,10 +1043,13 @@ function activeLore(s){
 function loreBlock(s){
   const hits = activeLore(s);
   if(!hits.length) return '';
-  return '\nWORLD INFO (background lore relevant right now — treat as established facts):\n'
-    + hits.map(e=>`- [${e.title}] ${e.content.replace(/\n+/g,' ')}`).join('\n') + '\n';
+  return '[WORLD INFO — background facts relevant right now, for you only; the learner did not write this]\n'
+    + hits.map(e=>`- [${e.title}] ${e.content.replace(/\n+/g,' ')}`).join('\n') + '\n[/WORLD INFO]\n\n';
 }
 
+/* 프롬프트 순서: 매 턴 똑같은 부분(규칙·캐릭터·페르소나·시나리오·기억)을 맨 앞에,
+   매 턴 바뀌는 로어북은 맨 끝(마지막 학습자 메시지 앞)에 둠.
+   → 앞부분이 매번 같아서 Gemini 같은 서비스의 캐싱, 로컬 모델의 이전 계산 재사용이 잘 됨 */
 function systemPrompt(s){
   const L = langOf(s.lang);
   let charBlock;
@@ -1062,10 +1065,6 @@ function systemPrompt(s){
   }
   return `You are an actor in a one-on-one roleplay chat that helps a Korean learner practice ${L.native}.
 
-SCENARIO: ${s.scenario}${s.detail ? `\nSCENARIO DETAILS: ${s.detail}` : ''}
-
-${charBlock}
-${s.personaProfile ? `\nTHE LEARNER'S ROLE (the person you are talking to): ${s.personaProfile.name} — ${s.personaProfile.desc}\nStay aware of who the learner is playing; react to their background and traits naturally within the story (e.g., if they are new to the language, your character may naturally speak a bit more patiently or rephrase — while staying in character).\n` : ''}${s.memory ? `\nSTORY SO FAR (established facts — you MUST stay consistent with all of this):\n${s.memory}\n` : ''}${loreBlock(s)}
 RULES:
 - Stay fully in character. All dialogue must be in ${L.native} only.
 - ${LEVEL_DESC[s.level]}
@@ -1074,12 +1073,25 @@ RULES:
 - FORMAT: put every narration on its own line wrapped in single asterisks, e.g. *She smiles and wipes the counter.* Dialogue lines are plain text with no quotes and no name prefixes.
 - Per reply: 0–2 narration lines and 1–4 dialogue sentences. Keep it chat-like, not essay-like.
 - Drive the conversation naturally: react, ask questions, create small events in the scene.
-- Never break character, never explain grammar, never use Korean unless the learner explicitly asks for help.`;
+- Never break character, never explain grammar, never use Korean unless the learner explicitly asks for help.
+- The learner's latest message may start with a [WORLD INFO] block. Treat it as established background facts known to you; never mention or quote the block itself.
+
+SCENARIO: ${s.scenario}${s.detail ? `\nSCENARIO DETAILS: ${s.detail}` : ''}
+
+${charBlock}
+${s.personaProfile ? `\nTHE LEARNER'S ROLE (the person you are talking to): ${s.personaProfile.name} — ${s.personaProfile.desc}\nStay aware of who the learner is playing; react to their background and traits naturally within the story (e.g., if they are new to the language, your character may naturally speak a bit more patiently or rephrase — while staying in character).\n` : ''}${s.memory ? `\nSTORY SO FAR (established facts — you MUST stay consistent with all of this):\n${s.memory}\n` : ''}`;
 }
 
 function chatPayloadMessages(s){
   const msgs = [{role:'system', content:systemPrompt(s)}];
   for(const m of s.messages) if(!m.archived) msgs.push({role:m.role, content:m.content});
+  // 로어는 저장된 대화에는 넣지 않고, 이번에 보낼 마지막 학습자 메시지 앞에만 붙임
+  const lore = loreBlock(s);
+  if(lore){
+    for(let i=msgs.length-1; i>0; i--){
+      if(msgs[i].role==='user'){ msgs[i] = {role:'user', content: lore + msgs[i].content}; break; }
+    }
+  }
   return msgs;
 }
 
