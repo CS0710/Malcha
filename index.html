@@ -269,6 +269,31 @@
   .tabs button{padding:8px 15px;border-radius:10px;font-size:13px;font-weight:700;color:var(--sub);border:1px solid var(--line);background:#FAFBFB}
   .tabs button.sel{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-dk)}
   .study-scroll{max-height:52vh;overflow-y:auto;padding-right:2px}
+  .tabs{flex-wrap:wrap}
+  .due-badge{margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#E5484D;color:#fff;font-size:11px;font-weight:800;align-items:center;justify-content:center}
+  .tab-n{display:inline-block;margin-left:4px;padding:0 6px;border-radius:8px;background:#E5484D;color:#fff;font-size:10.5px;line-height:17px}
+  .mk-stat{border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:10px;background:var(--accent-soft);font-size:13px;line-height:1.6}
+  .mk-stat b{display:block;font-size:15px;color:var(--accent-dk)}
+  .mk-stat span{color:var(--sub)}
+  .mk-stat em{font-style:normal;font-weight:700;margin-left:4px}
+  .mk-stat em.up{color:#2E7D53} .mk-stat em.down{color:#B4443C}
+  .mk-top-title{font-size:11.5px;font-weight:700;color:var(--sub);margin:2px 0 6px}
+  #mkTop{margin-bottom:10px}
+  .type-chip{display:inline-block;padding:3px 9px;border-radius:999px;background:#F3EBD2;color:#7A6427;font-size:12px;font-weight:700;margin:0 6px 6px 0}
+  .type-chip.sm{font-size:10.5px;padding:1px 7px;margin:0 6px 0 0}
+  .mk-item{border:1px solid var(--line);border-radius:12px;padding:10px 13px;margin-bottom:8px;font-size:13px;line-height:1.6;background:#FAFBFB}
+  .mk-item .w,.rv-errs .w{color:#B4443C;text-decoration:line-through;text-decoration-color:#D6A5A0}
+  .mk-item .r,.rv-errs .r{color:#2E6B4E;font-weight:700}
+  .mk-why{color:#6B6350;font-size:12.5px;margin:1px 0 4px}
+  .mk-orig{color:var(--sub);font-size:12.5px;margin-top:6px;word-break:break-word}
+  .mk-meta{color:var(--sub);font-size:11px;margin-top:5px}
+  .rv-grade{display:flex;gap:6px;width:100%}
+  .rv-grade button{flex:1;padding:10px 4px;white-space:nowrap}
+  .rv-speak{margin-top:10px;font-size:12px}
+  .rv-label{font-size:12px;color:var(--sub);font-weight:700;margin-bottom:10px}
+  .rv-sent{font-size:18px;font-weight:700;line-height:1.5;word-break:break-word}
+  .rv-fixed{margin-top:12px;font-size:16px;font-weight:700;color:#2E6B4E;word-break:break-word}
+  .rv-errs{margin-top:8px;font-size:13px;line-height:1.7;color:#6B6350}
   .vocab-controls{display:flex;gap:7px;margin-bottom:11px;flex-wrap:wrap;align-items:center}
   .vocab-controls input[type=text]{flex:1;min-width:130px;border:1px solid var(--line);border-radius:10px;padding:8px 11px;background:#FAFBFB;outline:none}
   .vocab-controls input[type=text]:focus{border-color:var(--accent);background:#fff}
@@ -357,7 +382,7 @@
     <button class="btn-new" onclick="openNewChat()">＋ 새 대화</button>
     <div class="sess-list" id="sessList"></div>
     <div class="side-foot">
-      <button class="btn-settings" onclick="openStudy()">📖 학습 노트 · 단어장</button>
+      <button class="btn-settings" onclick="openStudy()">📖 학습 노트 · 단어장<span class="due-badge" id="dueBadge" style="display:none" title="오늘 복습할 카드"></span></button>
       <button class="btn-settings" onclick="openChars()">👤 캐릭터 관리</button>
       <button class="btn-settings" onclick="openLore()">📜 로어북</button>
       <button class="btn-settings" onclick="openSettings()">⚙ 설정 · 모델 연결<span class="conn-dot" id="connDot"></span></button>
@@ -561,8 +586,30 @@
   <div class="modal" style="max-width:640px">
     <h2>📖 학습 노트</h2>
     <div class="tabs">
+      <button id="tabReview" onclick="switchStudyTab('review')">🔁 복습<span class="tab-n" id="tabReviewN" style="display:none"></span></button>
       <button id="tabVocab" class="sel" onclick="switchStudyTab('vocab')">📚 단어장</button>
+      <button id="tabMistakes" onclick="switchStudyTab('mistakes')">✍️ 실수 노트</button>
       <button id="tabReports" onclick="switchStudyTab('reports')">📊 리포트 모음</button>
+    </div>
+
+    <div id="reviewView" style="display:none">
+      <div class="quiz-card">
+        <div class="quiz-prog" id="rvProg"></div>
+        <div id="rvCard"></div>
+        <div class="quiz-btns" id="rvBtns"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-primary" onclick="document.getElementById('studyOverlay').classList.remove('show')">닫기</button>
+      </div>
+    </div>
+
+    <div id="mistakesView" style="display:none">
+      <div id="mkStats"></div>
+      <div id="mkTop"></div>
+      <div class="study-scroll" id="mkList"></div>
+      <div class="modal-actions">
+        <button class="btn-primary" onclick="document.getElementById('studyOverlay').classList.remove('show')">닫기</button>
+      </div>
     </div>
 
     <div id="vocabView">
@@ -740,6 +787,9 @@
     <div class="field"><label>💾 저장 공간</label>
       <div class="store-bar"><i id="storeBarFill"></i></div>
       <div class="memo-hint" id="storageInfo">확인 중…</div>
+    </div>
+    <div class="field"><label class="toggle-line" style="font-size:13px;color:var(--ink)"><input type="checkbox" id="setReviewChat"> 🔁 대화 속 복습 단어</label>
+      <div class="memo-hint">복습할 때가 된 단어 1~2개를 상대가 대화 중에 자연스럽게 써 줘요. 억지로 넣지는 않아요.</div>
     </div>
     <div class="field"><label class="toggle-line" style="font-size:13px;color:var(--ink)"><input type="checkbox" id="setAutoTTS"> 🔊 새 메시지 자동으로 읽어주기 (TTS)</label>
       <div class="memo-hint">운영체제에 내장된 음성을 사용해서 오프라인에서도 동작해요. 각 메시지의 🔊 버튼으로 개별 재생도 됩니다.</div>
@@ -1074,7 +1124,7 @@ RULES:
 - Per reply: 0–2 narration lines and 1–4 dialogue sentences. Keep it chat-like, not essay-like.
 - Drive the conversation naturally: react, ask questions, create small events in the scene.
 - Never break character, never explain grammar, never use Korean unless the learner explicitly asks for help.
-- The learner's latest message may start with a [WORLD INFO] block. Treat it as established background facts known to you; never mention or quote the block itself.
+- The learner's latest message may start with [WORLD INFO] or [REVIEW WORDS] blocks written for you only. Treat WORLD INFO as established background facts; follow REVIEW WORDS only when natural. Never mention or quote these blocks.
 
 SCENARIO: ${s.scenario}${s.detail ? `\nSCENARIO DETAILS: ${s.detail}` : ''}
 
@@ -1086,7 +1136,7 @@ function chatPayloadMessages(s){
   const msgs = [{role:'system', content:systemPrompt(s)}];
   for(const m of s.messages) if(!m.archived) msgs.push({role:m.role, content:m.content});
   // 로어는 저장된 대화에는 넣지 않고, 이번에 보낼 마지막 학습자 메시지 앞에만 붙임
-  const lore = loreBlock(s);
+  const lore = loreBlock(s) + reviewWordsBlock(s);
   if(lore){
     for(let i=msgs.length-1; i>0; i--){
       if(msgs[i].role==='user'){ msgs[i] = {role:'user', content: lore + msgs[i].content}; break; }
@@ -1205,6 +1255,7 @@ function connFailHelp(){
 
 /* ---------- render: sidebar ---------- */
 function renderSidebar(){
+  refreshDueBadge();
   const el = $('sessList'); el.innerHTML='';
   if(!sessions.length){ el.innerHTML = '<div style="padding:16px 12px;font-size:12.5px;color:var(--sub);line-height:1.7">아직 대화가 없어요.<br>＋ 새 대화로 시작해 보세요!</div>'; return; }
   for(const s of sessions){
@@ -1329,7 +1380,7 @@ async function sendMessage(){
   if(!text) return;
   if(!apiModel()){ openSettings(); return; }
   ta.value=''; autoGrow(); hideHint(); hideBanner();
-  const msg = settings.lightMode ? {role:'user', content:text} : {role:'user', content:text, review:{status:'pending'}};
+  const msg = settings.lightMode ? {role:'user', content:text, at:Date.now()} : {role:'user', content:text, at:Date.now(), review:{status:'pending'}};
   s.messages.push(msg);
   save(); renderChat(); renderReview();
   await requestReply(s);
@@ -1364,7 +1415,7 @@ async function analyzeTurn(s, msg, replyText){
   Casual-chat rules: short answers, fragments that answer the question, lowercase, missing final punctuation, contractions and normal texting style are NOT errors when a native would text the same way here.
   "error" = a genuine mistake a native would notice (tense, articles, prepositions, agreement, word choice, word order, spelling). Never invent errors.
   "tip" = no real errors, but a clearly more natural native phrasing exists. "ok" = natural as it is.
-  Shape: {"status":"ok|tip|error","corrected":"<whole message with only errors fixed>","errors":[{"wrong":"..","right":"..","why":"<한국어 한 문장>"}],"natural":"<more natural native version or empty>","natural_note":"<한국어 or empty>","praise":"<한국어 한 줄 or empty>"}
+  Shape: {"status":"ok|tip|error","corrected":"<whole message with only errors fixed>","errors":[{"wrong":"..","right":"..","why":"<한국어 한 문장>","type":"tense|article|preposition|agreement|word choice|word order|spelling|particle|conjugation|other"}],"natural":"<more natural native version or empty>","natural_note":"<한국어 or empty>","praise":"<한국어 한 줄 or empty>"}
   At most 3 errors; "errors" must be empty unless status is "error".`];
   if(wantVocab) tasks.push(`"vocab": from the OTHER PERSON's reply only, pick 0–3 common, reusable words or expressions worth learning for a ${LEVEL_KO[s.level]||'중급'} learner (not too basic, not too obscure). Skip: ${known||'(none)'}.
   Shape: [{"term":"..","meaning":"<간단한 한국어 뜻>","example":"<short natural ${L.native} example>"}]`);
@@ -1571,7 +1622,7 @@ Rules for casual chat:
 Return exactly this JSON (Korean for every explanation field):
 {"status":"ok|tip|error",
  "corrected":"<the whole message with only the errors fixed; identical to the original if no errors>",
- "errors":[{"wrong":"<wrong part>","right":"<fixed part>","why":"<한국어 한 문장 설명>"}],
+ "errors":[{"wrong":"<wrong part>","right":"<fixed part>","why":"<한국어 한 문장 설명>","type":"tense|article|preposition|agreement|word choice|word order|spelling|particle|conjugation|other"}],
  "natural":"<a more natural way a native would text it, or empty string>",
  "natural_note":"<한국어: 왜 더 자연스러운지 / 뉘앙스, or empty string>",
  "praise":"<한국어: 잘한 점 한 줄, or empty string>"}
@@ -1590,11 +1641,20 @@ function parseReview(text, original){
   if(!j || typeof j!=='object') return {status:'raw', corrected:'', note:text};   // 형식이 깨짐: 틀렸는지 알 수 없으므로 오류 개수에 넣지 않음
   return reviewFromObj(j, original);
 }
+// 실수 종류 (실수 노트의 '자주 하는 실수' 집계용)
+const ERR_TYPES = {tense:'시제', article:'관사', preposition:'전치사', agreement:'수 일치', 'word choice':'단어 선택',
+  'word order':'어순', spelling:'철자', particle:'조사', conjugation:'활용', other:'기타'};
+function normErrType(t){
+  t = String(t||'').toLowerCase().trim().replace(/[_-]/g,' ');
+  if(ERR_TYPES[t]) return t;
+  for(const k of Object.keys(ERR_TYPES)) if(t.includes(k)) return k;
+  return 'other';
+}
 function reviewFromObj(j, original){
   const errors = (Array.isArray(j.errors) ? j.errors : [])
     .filter(e=>e && (e.wrong||e.right))
     .slice(0,3)
-    .map(e=>({wrong:String(e.wrong||'').trim(), right:String(e.right||'').trim(), why:String(e.why||'').trim()}));
+    .map(e=>({wrong:String(e.wrong||'').trim(), right:String(e.right||'').trim(), why:String(e.why||'').trim(), type:normErrType(e.type)}));
   let st = String(j.status||'').toLowerCase();
   const corr = String(j.corrected||'').trim();
   if(st==='error' && !errors.length && (!corr || corr===original.trim())) st = j.natural ? 'tip' : 'ok';
@@ -1602,7 +1662,7 @@ function reviewFromObj(j, original){
   const natural = String(j.natural||'').trim(), nnote = String(j.natural_note||'').trim();
   const status = st==='error' ? 'fix' : (st==='tip' && natural ? 'tip' : 'ok');
   return {
-    status,
+    status, at: Date.now(),
     corrected: status==='fix' ? corr : '',
     errors,
     note: status==='fix' ? '' : String(j.praise||'').trim(),
@@ -1787,6 +1847,171 @@ function previewCharVoice(){
 }
 if('speechSynthesis' in window) speechSynthesis.addEventListener?.('voiceschanged', ()=>{ if($('charFormView').style.display==='block') renderCharVoice(); });
 
+/* =====================================================================
+   ✍️ 실수 노트 + 🔁 간격 반복 복습
+   - 실수는 대화 기록의 교정 결과(review.errors)에서 바로 모음 (따로 저장하지 않아 백업·불러오기에 자동 포함)
+   - 복습 일정(srs)은 단어(vocab 항목)와 교정된 메시지(review)에 붙여서 저장
+   ===================================================================== */
+const DAY = 86400000;
+const SRS_DAYS = [1, 3, 7, 14, 30, 60];   // 칸(box)별 다음 복습까지의 날짜
+function srsOf(obj, createdAt){ return obj.srs || {box:0, due:(createdAt||Date.now()) + DAY}; }
+
+function mistakeMessages(){
+  const out = [];
+  for(const s of sessions){
+    for(const m of s.messages){
+      if(m.role!=='user' || m.hidden || !m.review || m.review.status!=='fix') continue;
+      if(!m.review.errors || !m.review.errors.length) continue;   // 예전 형식 교정(종류·목록 없음)은 제외
+      out.push({s, m, at: m.review.at || m.at || s.createdAt || 0});
+    }
+  }
+  return out.sort((a,b)=>b.at-a.at);
+}
+function dueCards(now = Date.now()){
+  const cards = [];
+  for(const v of vocab){ const r = srsOf(v, v.addedAt); if(r.due <= now) cards.push({kind:'vocab', ref:v, lang:v.lang, due:r.due}); }
+  for(const x of mistakeMessages()){ const r = srsOf(x.m.review, x.at); if(r.due <= now) cards.push({kind:'fix', ref:x.m, lang:x.s.lang, due:r.due}); }
+  return cards.sort((a,b)=>a.due-b.due);
+}
+function refreshDueBadge(){
+  const b = $('dueBadge'); if(!b) return;
+  const n = dueCards().length;
+  b.style.display = n ? 'inline-flex' : 'none';
+  b.textContent = n > 99 ? '99+' : n;
+}
+
+/* ---------- 실수 노트 ---------- */
+function accuracy(from, to){
+  let ok = 0, all = 0;
+  for(const s of sessions) for(const m of s.messages){
+    if(m.role!=='user' || m.hidden || !m.review) continue;
+    const t = m.review.at; if(!t || t < from || t >= to) continue;
+    if(m.review.status==='ok' || m.review.status==='tip'){ ok++; all++; }
+    else if(m.review.status==='fix'){ all++; }
+  }
+  return {ok, all, pct: all ? Math.round(ok*100/all) : null};
+}
+function renderMistakes(){
+  const now = Date.now();
+  const cur = accuracy(now-7*DAY, now+1), prev = accuracy(now-14*DAY, now-7*DAY);
+  const stats = $('mkStats');
+  if(cur.all < 3){
+    stats.innerHTML = `<div class="mk-stat"><b>정확도</b><span>교정받은 문장이 3개 이상 쌓이면 최근 7일 정확도를 보여드려요.</span></div>`;
+  }else{
+    let diff = '';
+    if(prev.pct!==null && prev.all>=3){
+      const d = cur.pct - prev.pct;
+      diff = d>0 ? `<em class="up">지난주보다 ${d}%p ↑</em>` : d<0 ? `<em class="down">지난주보다 ${-d}%p ↓</em>` : `<em>지난주와 같아요</em>`;
+    }
+    stats.innerHTML = `<div class="mk-stat"><b>최근 7일 정확도 ${cur.pct}%</b><span>틀린 데 없는 문장 ${cur.ok} / ${cur.all}개 ${diff}</span></div>`;
+  }
+  const all = mistakeMessages();
+  // 자주 하는 실수 (최근 30일)
+  const counts = {};
+  for(const x of all){ if(x.at < now-30*DAY) continue; for(const e of x.m.review.errors){ const t=e.type||'other'; counts[t]=(counts[t]||0)+1; } }
+  const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  $('mkTop').innerHTML = top.length
+    ? `<div class="mk-top-title">자주 하는 실수 (최근 30일)</div>` + top.map(([t,c])=>`<span class="type-chip">${ERR_TYPES[t]||'기타'} <b>${c}</b></span>`).join('')
+    : '';
+  const list = $('mkList'); list.innerHTML = '';
+  if(!all.length){
+    list.innerHTML = '<div class="rev-empty">아직 모인 실수가 없어요.<br>대화하면서 교정에서 <b>✎ 틀린 부분이 있어요</b>가 나온 문장이 여기에 자동으로 쌓여요. 틀린 문장은 <b>🔁 복습</b>에도 카드로 나와요.</div>';
+    return;
+  }
+  const multiLang = new Set(all.map(x=>x.s.lang)).size > 1;
+  for(const x of all.slice(0,150)){
+    const r = x.m.review, d = new Date(x.at);
+    const div = document.createElement('div'); div.className='mk-item';
+    div.innerHTML = `
+      <div class="mk-errs">${r.errors.map(e=>`<div><span class="type-chip sm">${ERR_TYPES[e.type]||'기타'}</span><span class="w">${esc(e.wrong)}</span> → <span class="r">${esc(e.right)}</span>${e.why?`<div class="mk-why">${esc(e.why)}</div>`:''}</div>`).join('')}</div>
+      <div class="mk-orig">“${esc(x.m.content)}”${r.corrected?`<br>→ ${esc(r.corrected)}`:''}</div>
+      <div class="mk-meta">${multiLang?langOf(x.s.lang).label+' · ':''}${esc(x.s.title||'')} · ${d.getMonth()+1}/${d.getDate()}</div>`;
+    list.appendChild(div);
+  }
+}
+
+/* ---------- 🔁 오늘의 복습 ---------- */
+let rvQueue = [], rvRevealed = false, rvDone = 0;
+function startReview(){
+  const cards = dueCards();
+  // 한 번에 20장까지, 실수 카드와 단어 카드를 고르게 섞음
+  rvQueue = cards.slice(0, 20).sort(()=>Math.random()-.5);
+  rvRevealed = false; rvDone = 0;
+  renderReviewCard();
+}
+function renderReviewCard(){
+  const box = $('rvCard'), btns = $('rvBtns');
+  if(!rvQueue.length){
+    const left = dueCards().length;
+    const tomorrow = dueCards(Date.now()+DAY).length - left;
+    $('rvProg').textContent = '';
+    if(rvDone){
+      box.innerHTML = `<div class="quiz-term">🎉 ${rvDone}장 복습 완료!</div><div class="quiz-answer">${left ? `아직 ${left}장이 더 기다리고 있어요.` : '오늘 복습은 끝이에요. 꾸준함이 최고예요!'}</div>`;
+    }else{
+      box.innerHTML = left
+        ? `<div class="quiz-term">🔁 복습할 카드 ${left}장</div><div class="quiz-answer">단어와 내가 틀렸던 문장이 섞여 나와요.\n알면 ✓ 알아요, 모르면 모르겠어요를 눌러 주세요. 대답에 따라 다음 복습 날짜가 정해져요.</div>`
+        : `<div class="quiz-term">오늘 복습할 카드가 없어요 ☕</div><div class="quiz-answer">${tomorrow ? `내일 ${tomorrow}장이 돌아와요.` : '대화를 하면 단어와 실수가 모여서 복습 카드가 돼요.'}</div>`;
+    }
+    btns.innerHTML = left ? `<button class="btn-primary" onclick="startReview()">${rvDone?'이어서 복습':'복습 시작'}</button>` : '';
+    refreshDueBadge();
+    return;
+  }
+  const c = rvQueue[0];
+  $('rvProg').textContent = `남은 카드 ${rvQueue.length} · ${c.kind==='vocab' ? '📚 단어' : '✍️ 내 실수'}${c.again?' · 다시':''}`;
+  if(c.kind==='vocab'){
+    const v = c.ref;
+    box.innerHTML = `<div class="quiz-term">${esc(v.term)}</div>` + (rvRevealed
+      ? `<div class="quiz-answer">${esc(v.meaning||'')}${v.example?`\n\n${esc(v.example)}`:''}</div>`
+      : `<div class="quiz-answer">뜻이 뭘까요?</div>`);
+  }else{
+    const m = c.ref, r = m.review;
+    box.innerHTML = `<div class="rv-label">어디가 틀렸을까요? 머릿속으로 고쳐 보세요</div><div class="rv-sent">${esc(m.content)}</div>` + (rvRevealed
+      ? `<div class="rv-fixed">→ ${esc(r.corrected||'')}</div><div class="rv-errs">${r.errors.map(e=>`<div><span class="w">${esc(e.wrong)}</span> → <span class="r">${esc(e.right)}</span>${e.why?` · ${esc(e.why)}`:''}</div>`).join('')}</div>`
+      : '');
+  }
+  if(rvRevealed) box.innerHTML += `<div><button class="tool-btn rv-speak" onclick="speakCard()">🔊 듣기</button></div>`;
+  btns.innerHTML = rvRevealed
+    ? `<div class="rv-grade"><button class="btn-ghost" onclick="gradeCard(0)">모르겠어요</button><button class="btn-ghost" onclick="gradeCard(1)">헷갈려요</button><button class="btn-primary" onclick="gradeCard(2)">✓ 알아요</button></div>`
+    : `<button class="btn-primary" onclick="rvRevealed=true; renderReviewCard()">${c.kind==='vocab'?'뜻 보기':'정답 보기'}</button>`;
+}
+function speakCard(){
+  const c = rvQueue[0]; if(!c) return;
+  const text = c.kind==='vocab' ? (c.ref.example || c.ref.term) : (c.ref.review.corrected || c.ref.content);
+  speakText(text, c.lang, '', 'card:'+Date.now());
+}
+// 0 모르겠어요 / 1 헷갈려요 / 2 알아요
+function gradeCard(g){
+  const c = rvQueue.shift(); if(!c) return;
+  const target = c.kind==='vocab' ? c.ref : c.ref.review;
+  if(!c.again){   // 같은 회차에 다시 나온 카드는 연습만 하고 일정은 바꾸지 않음
+    const cur = srsOf(target, c.kind==='vocab' ? c.ref.addedAt : (c.ref.review.at||c.ref.at));
+    const now = Date.now();
+    if(g===0) target.srs = {box:0, due: now + DAY};
+    else if(g===1) target.srs = {box:cur.box, due: now + Math.max(1, Math.round(SRS_DAYS[cur.box]/2))*DAY};
+    else { const b = Math.min(cur.box+1, SRS_DAYS.length-1); target.srs = {box:b, due: now + SRS_DAYS[b]*DAY}; }
+    target.srs.last = now;
+    save();
+  }
+  if(g===0 && !c.again) rvQueue.push({...c, again:true});   // 모르는 카드는 이번 회차 끝에 한 번 더
+  rvDone++; rvRevealed = false;
+  renderReviewCard();
+}
+
+/* ---------- 대화 속 복습: 복습할 단어 1~2개를 캐릭터가 자연스럽게 써 보게 ---------- */
+function reviewWordsBlock(s){
+  if(settings.reviewInChat === false) return '';
+  const recent = normText(s.messages.filter(m=>!m.archived).slice(-6).map(m=>m.content).join('\n'));
+  const soon = Date.now() + DAY;
+  const words = vocab
+    .filter(v=>v.lang===s.lang)
+    .map(v=>({v, r:srsOf(v, v.addedAt)}))
+    .filter(x=>x.r.due <= soon && x.r.box <= 2 && !kwMatcher(normText(x.v.term))(recent))
+    .sort((a,b)=>a.r.due-b.r.due)
+    .slice(0,2).map(x=>x.v.term);
+  if(!words.length) return '';
+  return `[REVIEW WORDS — the learner is studying these. Only if it fits naturally, use ONE of them in your reply. Never force it, never explain it, never mention this note: ${words.map(w=>`"${w}"`).join(', ')}]\n\n`;
+}
+
 /* ---------- 🎤 말로 입력 (브라우저 음성 인식) ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, recBase = '';
@@ -1958,15 +2183,20 @@ function openStudy(){
   $('btnQuiz').textContent = '🃏 퀴즈 모드';
   $('autoVocabToggle').checked = !!settings.autoVocab;
   buildVocabLangFilter();
-  switchStudyTab('vocab');
+  switchStudyTab(dueCards().length ? 'review' : 'vocab');
   $('studyOverlay').classList.add('show');
 }
 function switchStudyTab(tab){
-  $('tabVocab').classList.toggle('sel', tab==='vocab');
-  $('tabReports').classList.toggle('sel', tab==='reports');
-  $('vocabView').style.display = tab==='vocab'?'block':'none';
-  $('reportsView').style.display = tab==='reports'?'block':'none';
-  if(tab==='vocab') renderVocab(); else renderReportsList();
+  for(const [t,btn,view] of [['review','tabReview','reviewView'],['vocab','tabVocab','vocabView'],['mistakes','tabMistakes','mistakesView'],['reports','tabReports','reportsView']]){
+    $(btn).classList.toggle('sel', tab===t);
+    $(view).style.display = tab===t ? 'block' : 'none';
+  }
+  const n = dueCards().length, tn = $('tabReviewN');
+  tn.style.display = n ? 'inline-block' : 'none'; tn.textContent = n;
+  if(tab==='vocab') renderVocab();
+  else if(tab==='reports') renderReportsList();
+  else if(tab==='mistakes') renderMistakes();
+  else { rvQueue = []; rvDone = 0; rvRevealed = false; renderReviewCard(); }
 }
 function setAutoVocab(v){ settings.autoVocab = v; save(); }
 
@@ -2672,6 +2902,7 @@ function openSettings(){
   $('setAutoTTS').checked = !!settings.autoTTS;
   $('setNoThink').checked = !!settings.noThink;
   $('setLight').checked = !!settings.lightMode;
+  $('setReviewChat').checked = settings.reviewInChat !== false;
   updateStorageInfo();
   renderThemeSw();
   $('testResult').textContent='';
@@ -2803,6 +3034,7 @@ function saveSettings(){
   settings.autoTTS = $('setAutoTTS').checked;
   settings.noThink = $('setNoThink').checked;
   settings.lightMode = $('setLight').checked;
+  settings.reviewInChat = $('setReviewChat').checked;
   save(); closeSettings(); renderChat();
 }
 
