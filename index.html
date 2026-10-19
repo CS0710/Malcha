@@ -1177,10 +1177,12 @@ async function ollamaChat(messages, onDelta){
   const base = {model:settings.model, messages, stream:true, keep_alive:'30m'};
   const post = body => fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const tryThink = settings.noThink && !thinkUnsupported[settings.model];
-  let res = await post(tryThink ? {...base, think:false} : base);
+  let res;
+  try{ res = await post(tryThink ? {...base, think:false} : base); }
+  catch(e){ lastApiError = {status:0, detail:String(e), at:Date.now(), local:true}; e.status = 0; throw e; }
   // 구버전 Ollama나 생각 모드가 없는 모델이 think 옵션을 거부하면 옵션 없이 다시 시도하고, 다음부터는 생략
   if(!res.ok && tryThink && res.status===400){ thinkUnsupported[settings.model] = true; res = await post(base); }
-  if(!res.ok) throw new Error('HTTP '+res.status);
+  if(!res.ok) throw await apiError(res);
   const reader = res.body.getReader(); const dec = new TextDecoder();
   let full='', buf='';
   while(true){
@@ -1200,13 +1202,37 @@ async function ollamaChat(messages, onDelta){
 }
 
 /* OpenAI 호환 온라인 API (OpenRouter, Groq, Gemini, OpenAI 등) */
+// API 오류 기록: 안내 문구를 고르는 데 씀
+let lastApiError = null;
+async function apiError(res){
+  let detail = '';
+  try{ const t = await res.text(); const j = JSON.parse(t); detail = (j.error && (j.error.message||j.error)) || j.message || t; }catch(e){}
+  const err = new Error('HTTP '+res.status);
+  err.status = res.status; err.detail = String(detail||'').slice(0,300);
+  lastApiError = {status:res.status, detail:err.detail, at:Date.now()};
+  return err;
+}
+const sleep = ms => new Promise(r=>setTimeout(r, ms));
+// 한도 초과(429)·일시적 서버 오류(5xx)는 잠깐 기다렸다가 최대 2번 다시 시도
+async function fetchWithRetry(url, opts){
+  const waits = [2000, 5000];
+  for(let i=0; ; i++){
+    let res;
+    try{ res = await fetch(url, opts); }
+    catch(e){ lastApiError = {status:0, detail:String(e), at:Date.now(), offline:!navigator.onLine}; e.status = 0; throw e; }
+    if(res.ok) return res;
+    const retryable = res.status===429 || res.status===500 || res.status===502 || res.status===503;
+    if(!retryable || i>=waits.length) throw await apiError(res);
+    const ra = parseFloat(res.headers.get('retry-after'));
+    await sleep(Math.min(isFinite(ra) ? ra*1000 : waits[i], 20000));
+  }
+}
 async function oaiChat(messages, onDelta){
-  const res = await fetch(settings.oaiUrl.replace(/\/$/,'')+'/chat/completions', {
+  const res = await fetchWithRetry(settings.oaiUrl.replace(/\/$/,'')+'/chat/completions', {
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+settings.oaiKey},
     body:JSON.stringify({model:settings.oaiModel, messages, stream:true})
   });
-  if(!res.ok) throw new Error('HTTP '+res.status);
   const reader = res.body.getReader(); const dec = new TextDecoder();
   let full='', buf='';
   while(true){
@@ -1246,7 +1272,20 @@ async function fetchModels(mode, oaiUrl, oaiKey){
 
 function showBanner(html){ const b=$('banner'); b.innerHTML=html; b.classList.add('show'); }
 function hideBanner(){ $('banner').classList.remove('show'); }
+function apiErrorText(){
+  const e = (lastApiError && Date.now()-lastApiError.at < 60000) ? lastApiError : null;
+  if(!navigator.onLine && isOnline()) return '📡 인터넷 연결이 끊겨 있어요. 연결되면 다시 보내 주세요. (💻 로컬 모델로 바꾸면 인터넷 없이도 대화할 수 있어요)';
+  if(!e) return '';
+  if(e.status===429) return '⏳ 요청 한도에 걸렸어요. 1분쯤 기다렸다가 다시 보내 보세요. 하루 한도를 다 썼다면 내일 풀려요. 자주 걸리면 ⚙ 설정에서 🍃 가벼운 모드를 켜거나 다른 API 프로필로 바꿔 보세요.';
+  if(e.status===401 || e.status===403) return '🔑 API 키가 맞지 않거나 권한이 없어요. ⚙ 설정에서 키를 다시 확인해 주세요.';
+  if(e.status===404) return '🔍 모델을 찾지 못했어요. ⚙ 설정의 모델명이 정확한지 확인해 주세요.';
+  if(e.status===400) return '⚠️ 요청이 거절됐어요' + (e.detail ? ': ' + esc(e.detail.slice(0,120)) : '') + '. 모델명이나 API 주소를 확인해 주세요.';
+  if(e.status>=500) return '🛠 서비스 쪽 서버가 일시적으로 불안정해요. 잠시 후 다시 보내 주세요.';
+  return '';
+}
 function connFailHelp(){
+  const specific = apiErrorText();
+  if(specific){ showBanner(specific); return; }
   if(isOnline())
     showBanner(`⚠️ 온라인 API 호출에 실패했습니다. ⚙ 설정에서 API 주소·키·모델명을 확인하세요. (크레딧 소진이나 요청 한도 초과일 수도 있어요)`);
   else
@@ -1348,7 +1387,7 @@ function messageNode(m, idx, s){
     const col=document.createElement('div'); col.className='bubble-col';
     const bub=document.createElement('div'); bub.className='bubble'; bub.textContent=m.content;
     col.appendChild(bub); row.appendChild(col); wrap.appendChild(row);
-    if(!m.review){
+    if(!m.review || m.review.status==='error'){
       const tools=document.createElement('div'); tools.className='tools';
       tools.style.justifyContent='flex-end';
       if(photo) tools.style.marginRight='41px';
@@ -1362,7 +1401,7 @@ function messageNode(m, idx, s){
 
 async function reviewOne(idx){
   const s = getSession(); if(!s) return;
-  const m = s.messages[idx]; if(!m || m.review) return;
+  const m = s.messages[idx]; if(!m || (m.review && m.review.status!=='error')) return;
   if(!apiModel()){ openSettings(); return; }
   m.review = {status:'pending'};
   revTab='fix'; reviewOpen=true;
@@ -1452,7 +1491,7 @@ Do these tasks and return {${['"review"', wantVocab?'"vocab"':'', wantMission?'"
       if(wantVocab) await collectVocab(s, replyText);
       if(wantMission) await judgeMission(s);
     }else{
-      msg.review = {status:'error', note:'교정 요청에 실패했어요. 연결 상태나 무료 한도를 확인해 주세요.'};
+      msg.review = {status:'error', note: (lastApiError && lastApiError.status===429) ? '요청 한도에 걸려 교정을 못 했어요. 잠시 후 메시지 아래 ✏️ 교정받기를 눌러 주세요.' : '교정 요청에 실패했어요. 잠시 후 메시지 아래 ✏️ 교정받기를 눌러 다시 받을 수 있어요.'};
       save(); renderReview();
     }
   }
@@ -1631,7 +1670,7 @@ At most 3 errors, most important first. "errors" must be empty unless status is 
     const clean = full.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
     msg.review = parseReview(clean, msg.content);
   }catch(e){
-    msg.review = {status:'error', note:'교정 요청에 실패했어요. 연결 상태를 확인해 주세요.'};
+    msg.review = {status:'error', note:'교정 요청에 실패했어요. 잠시 후 메시지 아래 ✏️ 교정받기를 눌러 다시 받을 수 있어요.'};
   }
   save(); renderReview();
 }
@@ -3097,6 +3136,11 @@ ta.addEventListener('keydown', e=>{
   if(e.key==='Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); sendMessage(); }
 });
 document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click', e=>{ if(e.target===o) o.classList.remove('show'); }));
+
+/* ---------- 오프라인 지원: 웹 주소로 열었을 때만 서비스 워커 등록 ---------- */
+if('serviceWorker' in navigator && location.protocol==='https:'){
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
 
 /* ---------- init ---------- */
 try{ applyTheme(localStorage.getItem('malcha_theme') || 'matcha'); }catch(e){}
