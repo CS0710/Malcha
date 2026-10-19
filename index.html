@@ -128,6 +128,11 @@
   .hint-box .close-hint{position:absolute;top:6px;right:8px;color:var(--sub);font-size:13px}
   .input-row{display:flex;gap:8px;align-items:flex-end}
   .btn-hint{min-width:38px;height:42px;border-radius:12px;background:#F1F3F3;font-size:17px;transition:background .15s}
+  .btn-mic{min-width:38px;height:42px;border-radius:12px;background:#F1F3F3;font-size:17px;transition:background .15s}
+  .btn-mic.on{background:#E5484D;color:#fff;animation:micPulse 1.2s ease-in-out infinite}
+  @keyframes micPulse{50%{box-shadow:0 0 0 5px rgba(229,72,77,.25)}}
+  .voice-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .voice-row input[type=range]{flex:1;min-width:120px}
   .btn-hint:hover{background:#E5E8E9}
   textarea#input{flex:1;resize:none;border:1px solid var(--line);border-radius:14px;padding:11px 14px;font-size:14.5px;line-height:1.5;max-height:130px;background:#FAFBFB;outline:none}
   textarea#input:focus{border-color:var(--accent);background:#fff}
@@ -396,6 +401,7 @@
         <div class="hint-box" id="hintBox" style="display:none"><button class="close-hint" onclick="hideHint()">✕</button><div id="hintContent"></div></div>
         <div class="input-row">
           <button class="btn-hint" id="btnHint" title="뭐라고 답할지 힌트 받기" onclick="getHints()">💡</button>
+          <button class="btn-mic" id="btnMic" title="말로 입력하기 (대화 언어로 받아써요)" onclick="toggleMic()" style="display:none">🎤</button>
           <textarea id="input" rows="1" placeholder="메시지를 입력하세요…"></textarea>
           <button class="btn-send" id="btnSend" onclick="sendMessage()">전송</button>
         </div>
@@ -521,6 +527,21 @@
       <div class="field"><label>배경 설정</label><textarea id="chBackground" placeholder="예: 시애틀 출신 27살. 대학에서 미술을 전공했지만 지금은 카페를 운영 중. 3년 전 이 동네로 이사 왔다."></textarea></div>
       <div class="field"><label>습관 · 말버릇</label><textarea id="chHabits" placeholder="예: 말끝에 'you know?'를 자주 붙임. 웃을 때 손뼉을 침. 생각할 때 머리카락을 만짐."></textarea></div>
       <div class="field"><label>가치관 · 신념</label><textarea id="chValues" placeholder="예: 솔직함이 최고라고 믿음. 환경 문제에 관심 많음. 돈보다 경험을 중시."></textarea></div>
+      <div class="field"><label>🔊 목소리 (듣기)</label>
+        <div class="seg" id="chGenderSeg">
+          <button type="button" data-v="">자동</button>
+          <button type="button" data-v="male">남자</button>
+          <button type="button" data-v="female">여자</button>
+        </div>
+        <select id="chVoice" style="margin-top:8px"></select>
+        <div class="voice-row" style="margin-top:8px">
+          <span class="memo-hint" style="margin:0">톤</span>
+          <input type="range" id="chPitch" min="0.5" max="1.5" step="0.05" value="1">
+          <span class="memo-hint" style="margin:0;min-width:34px" id="chPitchVal">보통</span>
+          <button type="button" class="btn-mini" onclick="previewCharVoice()">▶ 미리 듣기</button>
+        </div>
+        <div class="memo-hint" id="chVoiceInfo"></div>
+      </div>
       <div class="modal-actions">
         <button class="btn-ghost" onclick="showCharList()">← 목록으로</button>
         <button class="btn-primary" onclick="saveChar()">저장</button>
@@ -1361,7 +1382,7 @@ async function requestReply(s){
     const finalText = full.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
     s.messages.push({role:'assistant', content:finalText||full});
     save(); renderChat(); renderSidebar();
-    if(settings.autoTTS) speakText(finalText||full, s.lang, s.level, s.id+':auto'+s.messages.length);
+    if(settings.autoTTS) speakText(finalText||full, s.lang, s.level, s.id+':auto'+s.messages.length, voicePrefOf(s));
   }catch(e){
     holder.remove(); connFailHelp();
   }finally{
@@ -1524,7 +1545,42 @@ if('speechSynthesis' in window){
   const loadV = ()=>{ ttsVoices = speechSynthesis.getVoices(); };
   loadV(); speechSynthesis.onvoiceschanged = loadV;
 }
-function speakText(text, langId, level, key){
+/* 목소리 성별 추정: 브라우저는 성별 정보를 주지 않아서, 기기별로 알려진 목소리 이름으로 추정 */
+const MALE_VOICE = /\b(male|man|david|mark|guy|ryan|christopher|eric|roger|steffan|andrew|brian|davis|jason|tony|alex|daniel|fred|tom|aaron|arthur|gordon|oliver|rishi|reed|ralph|albert|bruce|junior|lee|nathan|evan|liam|thomas|george|james|william|otoya|ichiro|keita|daichi|naoki|hattori|jorge|pablo|alvaro|álvaro|diego|juan|raul|raúl|carlos|enrique|tpd|iom|iol|iog-male|rjs|sfg-male)\b/i;
+const FEMALE_VOICE = /\b(female|woman|zira|aria|jenny|michelle|ana|emma|ava|libby|sonia|samantha|karen|moira|tessa|victoria|allison|susan|fiona|kate|serena|martha|nicky|zoe|siri|catherine|hazel|heera|linda|kathy|vicki|kyoko|haruka|ayumi|nanami|sayaka|mizuki|o-ren|monica|mónica|paulina|helena|laura|elvira|dalia|marisol|lucia|lucía|paloma|sfg|iob|tpc|tpf|ioc)\b/i;
+function voiceGenderOf(v){
+  const n = (v.name||'') + ' ' + (v.voiceURI||'');
+  if(/female|woman/i.test(n)) return 'female';
+  if(MALE_VOICE.test(n)) return 'male';
+  if(FEMALE_VOICE.test(n)) return 'female';
+  return '';
+}
+const voicesFor = langId => {
+  const prefix = langOf(langId).bcp.slice(0,2).toLowerCase();
+  return ttsVoices.filter(v=>v.lang && v.lang.replace('_','-').toLowerCase().startsWith(prefix));
+};
+// 캐릭터 설정에 맞는 목소리와 톤 고르기
+function pickVoice(langId, pref){
+  const list = voicesFor(langId);
+  const bcp = langOf(langId).bcp.toLowerCase();
+  const sameRegion = v => v.lang.replace('_','-').toLowerCase()===bcp;
+  pref = pref || {};
+  let voice = null, pitch = pref.pitch || 1, note = '';
+  if(pref.voice) voice = list.find(v=>v.name===pref.voice) || null;
+  if(!voice && pref.gender){
+    const g = list.filter(v=>voiceGenderOf(v)===pref.gender);
+    voice = g.find(sameRegion) || g[0] || null;
+    if(!voice){
+      // 이 기기에 해당 성별 목소리가 없으면 기본 목소리의 톤으로 보정
+      voice = list.find(sameRegion) || list[0] || null;
+      if(!pref.pitch) pitch = pref.gender==='male' ? 0.72 : 1.2;
+      note = 'fallback';
+    }
+  }
+  if(!voice) voice = list.find(sameRegion) || list[0] || null;
+  return {voice, pitch, note};
+}
+function speakText(text, langId, level, key, pref){
   if(!('speechSynthesis' in window)){ showBanner('이 브라우저는 음성 합성(TTS)을 지원하지 않아요.'); return; }
   if(speechSynthesis.speaking && speakingKey===key){ speechSynthesis.cancel(); speakingKey=null; return; }
   speechSynthesis.cancel();
@@ -1533,17 +1589,98 @@ function speakText(text, langId, level, key){
   if(!clean) return;
   const u = new SpeechSynthesisUtterance(clean);
   u.lang = L.bcp;
-  const prefix = L.bcp.slice(0,2).toLowerCase();
-  const v = ttsVoices.find(v=>v.lang && v.lang.replace('_','-').toLowerCase().startsWith(prefix));
-  if(v) u.voice = v;
+  const pick = pickVoice(langId, pref);
+  if(pick.voice) u.voice = pick.voice;
+  u.pitch = pick.pitch;
   u.rate = level==='beginner' ? 0.85 : 1;
   u.onend = ()=>{ if(speakingKey===key) speakingKey=null; };
   speakingKey = key;
   speechSynthesis.speak(u);
 }
+function voicePrefOf(s){
+  const c = s && s.charId ? characters.find(x=>x.id===s.charId) : null;
+  return c ? {gender:c.voiceGender||'', voice:c.voiceName||'', pitch:c.voicePitch||null} : {};
+}
 function speakMsg(idx){
   const s = getSession(); if(!s) return;
-  speakText(s.messages[idx].content, s.lang, s.level, s.id+':'+idx);
+  speakText(s.messages[idx].content, s.lang, s.level, s.id+':'+idx, voicePrefOf(s));
+}
+
+/* 캐릭터 편집 화면의 목소리 설정 */
+let charVoiceDraft = {gender:'', voice:'', pitch:null};
+const VOICE_LANG_FOR_FORM = ()=> (getSession()?.lang) || 'en';
+function renderCharVoice(){
+  [...$('chGenderSeg').children].forEach(b=>b.classList.toggle('sel', b.dataset.v===charVoiceDraft.gender));
+  const langId = VOICE_LANG_FOR_FORM();
+  const sel = $('chVoice'); sel.innerHTML = '';
+  const auto = document.createElement('option'); auto.value=''; auto.textContent='목소리 자동 선택 (위의 성별 기준)'; sel.appendChild(auto);
+  for(const v of voicesFor(langId)){
+    const g = voiceGenderOf(v);
+    const o = document.createElement('option'); o.value = v.name;
+    o.textContent = `${g==='male'?'👨 ':g==='female'?'👩 ':''}${v.name} (${v.lang})`;
+    sel.appendChild(o);
+  }
+  sel.value = charVoiceDraft.voice || '';
+  if(sel.value !== (charVoiceDraft.voice||'')) sel.value = '';
+  const pick = pickVoice(langId, charVoiceDraft);
+  $('chPitch').value = charVoiceDraft.pitch || pick.pitch;
+  const pv = +$('chPitch').value;
+  $('chPitchVal').textContent = Math.abs(pv-1)<0.03 ? '보통' : pv<1 ? '낮게' : '높게';
+  const n = voicesFor(langId).length;
+  let info = '';
+  if(!('speechSynthesis' in window)) info = '이 브라우저는 듣기(음성 합성)를 지원하지 않아요.';
+  else if(!n) info = `이 기기에서 ${langOf(langId).name} 목소리를 찾지 못했어요. 기기 설정의 TTS(텍스트 음성 변환)에서 ${langOf(langId).name} 음성을 설치해 보세요.`;
+  else if(pick.note==='fallback') info = `이 기기에는 ${charVoiceDraft.gender==='male'?'남자':'여자'} 목소리가 없어서, 기본 목소리의 톤을 ${charVoiceDraft.gender==='male'?'낮춰서':'높여서'} 읽어요. 톤 막대로 조절할 수 있어요.`;
+  else if(pick.voice) info = `지금 쓰는 목소리: ${pick.voice.name}`;
+  $('chVoiceInfo').textContent = info;
+}
+$('chGenderSeg').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  charVoiceDraft.gender = b.dataset.v; charVoiceDraft.voice = ''; charVoiceDraft.pitch = null;
+  renderCharVoice();
+});
+$('chVoice').addEventListener('change', e=>{ charVoiceDraft.voice = e.target.value; renderCharVoice(); });
+$('chPitch').addEventListener('input', e=>{
+  charVoiceDraft.pitch = +e.target.value;
+  const pv = charVoiceDraft.pitch;
+  $('chPitchVal').textContent = Math.abs(pv-1)<0.03 ? '보통' : pv<1 ? '낮게' : '높게';
+});
+function previewCharVoice(){
+  const langId = VOICE_LANG_FOR_FORM();
+  const sample = {en:"Hey. For the record, this is what I sound like.", ja:'こんにちは。私の声はこんな感じです。', es:'Hola. Así suena mi voz.'}[langId] || 'Hello.';
+  speakText(sample, langId, '', 'preview:'+Date.now(), charVoiceDraft);
+}
+if('speechSynthesis' in window) speechSynthesis.addEventListener?.('voiceschanged', ()=>{ if($('charFormView').style.display==='block') renderCharVoice(); });
+
+/* ---------- 🎤 말로 입력 (브라우저 음성 인식) ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, recBase = '';
+if(SR) $('btnMic').style.display = '';
+function toggleMic(){
+  if(rec){ rec.stop(); return; }
+  const s = getSession(); if(!s) return;
+  rec = new SR();
+  rec.lang = langOf(s.lang).bcp;          // 대화 언어로 받아쓰기 (키보드 언어를 바꿀 필요 없음)
+  rec.interimResults = true;
+  rec.continuous = false;
+  const ta = $('input');
+  recBase = ta.value ? ta.value.replace(/\s*$/,' ') : '';
+  rec.onresult = e=>{
+    let txt = '';
+    for(const r of e.results) txt += r[0].transcript;
+    ta.value = recBase + txt; autoGrow();
+  };
+  rec.onerror = e=>{
+    if(e.error==='not-allowed' || e.error==='service-not-allowed')
+      showBanner('🎤 마이크 권한이 꺼져 있어요. 브라우저 주소창의 사이트 설정에서 마이크를 허용해 주세요.');
+    else if(e.error==='no-speech') {}
+    else showBanner('🎤 음성 인식을 하지 못했어요 ('+e.error+'). 잠시 후 다시 시도해 주세요.');
+  };
+  rec.onend = ()=>{ rec = null; $('btnMic').classList.remove('on'); $('btnMic').textContent='🎤'; ta.focus(); };
+  try{
+    rec.start();
+    $('btnMic').classList.add('on'); $('btnMic').textContent='■';
+  }catch(err){ rec = null; }
 }
 
 /* ---------- 미션 모드 ---------- */
@@ -2077,6 +2214,8 @@ function openCharForm(id){
   $('chBackground').value = c?(c.background||''):'';
   $('chHabits').value = c?(c.habits||''):'';
   $('chValues').value = c?(c.values||''):'';
+  charVoiceDraft = {gender:c?.voiceGender||'', voice:c?.voiceName||'', pitch:c?.voicePitch||null};
+  renderCharVoice();
   renderPhotoPreview();
   $('charListView').style.display='none'; $('charFormView').style.display='block';
 }
@@ -2119,6 +2258,9 @@ function saveChar(){
     background: $('chBackground').value.trim(),
     habits: $('chHabits').value.trim(),
     values: $('chValues').value.trim(),
+    voiceGender: charVoiceDraft.gender,
+    voiceName: charVoiceDraft.voice,
+    voicePitch: charVoiceDraft.pitch,
     photo: pendingPhoto,
   };
   if(editingCharId){
