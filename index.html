@@ -304,6 +304,19 @@
   .mk-why{color:#6B6350;font-size:12.5px;margin:1px 0 4px}
   .mk-orig{color:var(--sub);font-size:12.5px;margin-top:6px;word-break:break-word}
   .mk-meta{color:var(--sub);font-size:11px;margin-top:5px}
+  .avatar.letter{background:#E2EBF3;color:#3B4A5A;font-weight:800;font-size:14px}
+  .speaker{font-size:11px;font-weight:700;color:var(--chat-sub);margin:0 0 2px 4px}
+  .row.them .bubble.cast{background:var(--them);border-style:dashed}
+  .cast-chips{display:flex;flex-wrap:wrap;gap:6px}
+  #castCharList{display:flex;flex-wrap:wrap;gap:6px}
+  .cast-chip{display:flex;align-items:center;gap:6px;padding:5px 11px 5px 5px;border-radius:999px;border:1px solid var(--line);background:#FAFBFB;font-size:13px;font-weight:600}
+  .cast-chip.sel{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-dk)}
+  .cast-chip .avatar,.cast-row .avatar{width:26px;height:26px;min-width:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#F0EDE6;font-size:12px}
+  .cast-row .avatar{width:32px;height:32px;min-width:32px}
+  .cast-row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:6px;background:#FAFBFB}
+  .cast-meta{flex:1;min-width:0;font-size:13px;line-height:1.4}
+  .cast-meta span{display:block;color:var(--sub);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #castOverlay{z-index:120}
   .rv-grade{display:flex;gap:6px;width:100%}
   .rv-grade button{flex:1;padding:10px 4px;white-space:nowrap}
   .rv-speak{margin-top:10px;font-size:12px}
@@ -438,6 +451,7 @@
         <select class="head-level" id="headLevel" title="난이도 변경" onchange="changeLevel(this.value)">
           <option value="beginner">🌱 초급</option><option value="intermediate">🌿 중급</option><option value="advanced">🌳 고급</option>
         </select>
+        <button class="btn-rev-toggle" onclick="openCast(activeId)" title="조연">🎭<span class="lbl"> 조연</span></button>
         <button class="btn-rev-toggle" onclick="openReport()" title="리포트">📊<span class="lbl"> 리포트</span></button>
         <button class="btn-rev-toggle" id="btnRevToggle" onclick="toggleReview()" title="학습 패널">📋<span class="lbl"> 노트</span><span class="badge" id="revBadge" style="display:none"></span></button>
       </div>
@@ -484,6 +498,28 @@
 </div>
 
 <!-- New chat modal -->
+<div class="overlay" id="castOverlay">
+  <div class="modal" style="max-width:560px">
+    <h2>🎭 조연</h2>
+    <div class="memo-hint" style="margin:-8px 0 14px">주인공과의 대화에 가끔 끼어드는 사람들이에요. 최대 3명. 메시지에 <b>@이름</b>을 쓰면 바로 불러올 수 있어요.</div>
+    <div class="field"><label>저장된 캐릭터에서 고르기</label><div id="castCharList"></div></div>
+    <div class="field"><label>빠르게 추가</label>
+      <input type="text" id="castQuickName" placeholder="이름 (예: Priya)" style="margin-bottom:6px">
+      <input type="text" id="castQuickDesc" placeholder="한 줄 설명 (예: Jake의 대학 친구, 장난기 많고 직설적)" style="margin-bottom:6px">
+      <div class="inline-row"><select id="castQuickGender"><option value="">목소리 자동</option><option value="male">남자 목소리</option><option value="female">여자 목소리</option></select><button type="button" class="btn-mini" onclick="addQuickCast()">＋ 추가</button></div>
+    </div>
+    <div class="field"><label>지금 조연</label><div id="castCurrent"></div></div>
+    <div class="field"><label>랜덤 등장</label>
+      <div class="seg" id="castFreqSeg"><button type="button" data-v="off">안 함</button><button type="button" data-v="some">가끔</button><button type="button" data-v="often">자주</button></div>
+      <div class="memo-hint">'안 함'이어도 @이름으로는 부를 수 있어요. 한 번 등장하면 최소 3턴은 쉬어요.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeCast()">취소</button>
+      <button class="btn-primary" onclick="saveCast()">저장</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="newChatOverlay">
   <div class="modal">
     <h2>새 대화 만들기</h2>
@@ -500,6 +536,10 @@
     <div class="field"><label>상대 캐릭터</label>
       <select id="charSelect"><option value="">기본 — 시나리오에 어울리는 캐릭터</option></select>
       <div class="memo-hint">나만의 캐릭터는 사이드바의 <b>👤 캐릭터 관리</b>에서 만들 수 있어요. 선택하면 그 캐릭터의 배경·습관·가치관이 대화 내내 유지됩니다.</div>
+    </div>
+    <div class="field"><label>🎭 조연 (선택)</label>
+      <div class="inline-row" style="align-items:center"><div class="memo-hint" id="newCastSummary" style="margin:0;flex:1">없음</div><button type="button" class="btn-mini" onclick="openCast('new')">조연 고르기</button></div>
+      <div class="memo-hint">친구·동료처럼 대화에 가끔 끼어드는 사람을 정해요. 대화 중에 @이름으로 부를 수도 있어요.</div>
     </div>
     <div class="field"><label>🙋 내 캐릭터 (선택)</label>
       <select id="personaSelect"><option value="">기본 — 그냥 나</option></select>
@@ -1117,7 +1157,7 @@ function activeLore(s){
   const hits = [];
   for(const e of lorebook){
     if(e.enabled===false) continue;
-    if(e.charId && e.charId!==s.charId) continue;
+    if(e.charId && e.charId!==s.charId && !(s.cast||[]).some(m=>m.charId===e.charId)) continue;
     if(e.always){ hits.push({e, score:1e6}); continue; }
     const kws = (e.keywords||'').split(',').map(k=>normText(k.trim())).filter(Boolean);
     let score = 0;
@@ -1172,19 +1212,19 @@ RULES:
 - Per reply: 0–2 narration lines and 1–4 dialogue sentences. Keep it chat-like, not essay-like.
 - Drive the conversation naturally: react, ask questions, create small events in the scene.
 - Never break character, never explain grammar, never use Korean unless the learner explicitly asks for help.
-- The learner's latest message may start with [WORLD INFO] or [REVIEW WORDS] blocks written for you only. Treat WORLD INFO as established background facts; follow REVIEW WORDS only when natural. Never mention or quote these blocks.
+- The learner's latest message may start with [WORLD INFO], [REVIEW WORDS] or [CAMEO] blocks written for you only. Follow CAMEO notes. Treat WORLD INFO as established background facts; follow REVIEW WORDS only when natural. Never mention or quote these blocks.
 
 SCENARIO: ${s.scenario}${s.detail ? `\nSCENARIO DETAILS: ${s.detail}` : ''}
 
 ${charBlock}
-${s.personaProfile ? `\nTHE LEARNER'S ROLE (the person you are talking to): ${s.personaProfile.name} — ${s.personaProfile.desc}\nStay aware of who the learner is playing; react to their background and traits naturally within the story (e.g., if they are new to the language, your character may naturally speak a bit more patiently or rephrase — while staying in character).\n` : ''}${s.memory ? `\nSTORY SO FAR (established facts — you MUST stay consistent with all of this):\n${s.memory}\n` : ''}`;
+${castBlock(s)}${s.personaProfile ? `\nTHE LEARNER'S ROLE (the person you are talking to): ${s.personaProfile.name} — ${s.personaProfile.desc}\nStay aware of who the learner is playing; react to their background and traits naturally within the story (e.g., if they are new to the language, your character may naturally speak a bit more patiently or rephrase — while staying in character).\n` : ''}${s.memory ? `\nSTORY SO FAR (established facts — you MUST stay consistent with all of this):\n${s.memory}\n` : ''}`;
 }
 
 function chatPayloadMessages(s){
   const msgs = [{role:'system', content:systemPrompt(s)}];
   for(const m of s.messages) if(!m.archived) msgs.push({role:m.role, content:m.content});
   // 로어는 저장된 대화에는 넣지 않고, 이번에 보낼 마지막 학습자 메시지 앞에만 붙임
-  const lore = loreBlock(s) + reviewWordsBlock(s);
+  const lore = loreBlock(s) + reviewWordsBlock(s) + cameoBlock(s);
   if(lore){
     for(let i=msgs.length-1; i>0; i--){
       if(msgs[i].role==='user'){ msgs[i] = {role:'user', content: lore + msgs[i].content}; break; }
@@ -1399,7 +1439,7 @@ function renderChat(){
   $('headAvatar').innerHTML = avatarInner(s);
   $('headTitle').textContent = s.title;
   $('headTitle').title = s.title;
-  $('headSub').textContent = `${langOf(s.lang).name} · ${isOnline()?'☁️ '+(activeProfile().name||'API')+' · ':''}${apiModel()||'모델 미선택'}${settings.lightMode?' · 🍃':''}`;
+  $('headSub').textContent = `${langOf(s.lang).name} · ${isOnline()?'☁️ '+(activeProfile().name||'API')+' · ':''}${apiModel()||'모델 미선택'}${settings.lightMode?' · 🍃':''}${(s.cast||[]).length ? ' · 🎭 '+castOf(s).map(m=>m.name).join(', ') : ''}`;
   $('headLevel').value = s.level;
   const inner = $('msgInner'); inner.innerHTML='';
   s.messages.forEach((m,idx)=>{ if(!m.hidden) inner.appendChild(messageNode(m, idx, s)); });
@@ -1413,11 +1453,7 @@ function messageNode(m, idx, s){
       if(b.t==='n'){
         const n=document.createElement('div'); n.className='narration'; n.textContent=b.c; wrap.appendChild(n);
       }else{
-        const row=document.createElement('div'); row.className='row them';
-        row.innerHTML=`<div class="avatar">${avatarInner(s)}</div>`;
-        const col=document.createElement('div'); col.className='bubble-col';
-        const bub=document.createElement('div'); bub.className='bubble'; bub.textContent=b.c;
-        col.appendChild(bub); row.appendChild(col); wrap.appendChild(row);
+        for(const row of dialogueRows(b.c, s)) wrap.appendChild(row);
       }
     }
     // tools under the last assistant block
@@ -1614,7 +1650,7 @@ async function requestReply(s){
     s.messages.push({role:'assistant', content:finalText||full});
     save(); renderChat(); renderSidebar();
     renderReportNudge();
-    if(settings.autoTTS) speakText(finalText||full, s.lang, s.level, s.id+':auto'+s.messages.length, voicePrefOf(s));
+    if(settings.autoTTS) speakParts(speechParts(finalText||full, s), s.lang, s.level, s.id+':auto'+s.messages.length);
   }catch(e){
     holder.remove(); connFailHelp();
   }finally{
@@ -1627,11 +1663,7 @@ function messageNodeLite(text, s){
   for(const b of parseBlocks(text)){
     if(b.t==='n'){ const n=document.createElement('div'); n.className='narration'; n.textContent=b.c; wrap.appendChild(n); }
     else{
-      const row=document.createElement('div'); row.className='row them';
-      row.innerHTML=`<div class="avatar">${avatarInner(s)}</div>`;
-      const col=document.createElement('div'); col.className='bubble-col';
-      const bub=document.createElement('div'); bub.className='bubble'; bub.textContent=b.c;
-      col.appendChild(bub); row.appendChild(col); wrap.appendChild(row);
+      for(const row of dialogueRows(b.c, s)) wrap.appendChild(row);
     }
   }
   return wrap;
@@ -1864,6 +1896,25 @@ function pickVoice(langId, pref){
   if(!voice) voice = list.find(sameRegion) || list[0] || null;
   return {voice, pitch, note};
 }
+function speakParts(parts, langId, level, key){
+  if(!('speechSynthesis' in window)){ showBanner('이 브라우저는 음성 합성(TTS)을 지원하지 않아요.'); return; }
+  if(speechSynthesis.speaking && speakingKey===key){ speechSynthesis.cancel(); speakingKey=null; return; }
+  speechSynthesis.cancel();
+  const L = langOf(langId);
+  parts = parts.map(p=>({...p, text:p.text.replace(/\*[^*]*\*/g,' ').replace(/\s+/g,' ').trim()})).filter(p=>p.text);
+  if(!parts.length) return;
+  speakingKey = key;
+  parts.forEach((p,i)=>{
+    const u = new SpeechSynthesisUtterance(p.text);
+    u.lang = L.bcp;
+    const pick = pickVoice(langId, p.pref);
+    if(pick.voice) u.voice = pick.voice;
+    u.pitch = pick.pitch;
+    u.rate = level==='beginner' ? 0.85 : 1;
+    if(i===parts.length-1) u.onend = ()=>{ if(speakingKey===key) speakingKey=null; };
+    speechSynthesis.speak(u);
+  });
+}
 function speakText(text, langId, level, key, pref){
   if(!('speechSynthesis' in window)){ showBanner('이 브라우저는 음성 합성(TTS)을 지원하지 않아요.'); return; }
   if(speechSynthesis.speaking && speakingKey===key){ speechSynthesis.cancel(); speakingKey=null; return; }
@@ -1887,7 +1938,7 @@ function voicePrefOf(s){
 }
 function speakMsg(idx){
   const s = getSession(); if(!s) return;
-  speakText(s.messages[idx].content, s.lang, s.level, s.id+':'+idx, voicePrefOf(s));
+  speakParts(speechParts(s.messages[idx].content, s), s.lang, s.level, s.id+':'+idx);
 }
 
 /* 캐릭터 편집 화면의 목소리 설정 */
@@ -2561,6 +2612,7 @@ let sel = {lang:'en', level:'intermediate', scen:'cafe'};
 function openNewChat(){
   buildLangSeg(); buildScenGrid(); buildCharSelect(); buildPersonaSelect();
   $('detailInput').value=''; $('missionInput').value='';
+  newCastDraft = {list:[], freq:'some'}; renderNewCastSummary();
   $('newChatOverlay').classList.add('show');
 }
 function closeNewChat(){ $('newChatOverlay').classList.remove('show'); }
@@ -2627,6 +2679,7 @@ async function createSession(){
     detail: $('detailInput').value.trim(),
     mission: $('missionInput').value.trim(),
     missionDone: false, missionComment: '',
+    cast: newCastDraft.list.filter(m=>m.charId!==charId), castFreq: newCastDraft.freq,
     memory: '',
     messages: [], createdAt: Date.now()
   };
@@ -3370,6 +3423,176 @@ function sectionStatsMd(part){
 ` : '') + `
 `;
 }
+
+/* =====================================================================
+   🎭 조연: 주인공과의 대화에 가끔 끼어드는 사람들
+   - s.cast = [{key, charId|null, name, desc, gender}], s.castFreq = 'off'|'some'|'often'
+   - 등장은 앱이 정함: 확률(쿨다운 3턴) 또는 학습자가 @이름으로 부를 때 → 마지막 메시지 앞 [CAMEO] 안내
+   - 조연의 대사는 "이름: 대사" 줄로 받아서 따로 말풍선·목소리로 보여줌
+   ===================================================================== */
+const CAST_MAX = 3;
+const CAST_P = {off:0, some:0.15, often:0.3};
+let castDraft = null, castTarget = null, newCastDraft = {list:[], freq:'some'};
+
+function castMember(s, m){
+  const c = m.charId ? characters.find(x=>x.id===m.charId) : null;
+  return {
+    ...m,
+    name: c ? c.name : m.name,
+    desc: c ? [c.keywords, (c.background||'').replace(/\s+/g,' ').slice(0,280)].filter(Boolean).join('. ') : (m.desc||''),
+    photo: c ? c.photo : null,
+    voice: c ? {gender:c.voiceGender||'', voice:c.voiceName||'', pitch:c.voicePitch||null} : {gender:m.gender||''}
+  };
+}
+const castOf = s => (s && Array.isArray(s.cast) ? s.cast : []).map(m=>castMember(s, m));
+
+function castBlock(s){
+  const cast = castOf(s); if(!cast.length) return '';
+  return `\nSUPPORTING CHARACTERS (they are NOT in every reply — they appear only when a [CAMEO] note asks for it, or when the learner @mentions them):
+${cast.map(m=>`- ${m.name}${m.desc ? ' — '+m.desc : ''}`).join('\n')}
+When a supporting character speaks, put each of their dialogue lines on its own line starting with their exact name and a colon, e.g. "${cast[0].name}: hey!". Your main character's dialogue never has a name prefix. Supporting characters also speak only ${langOf(s.lang).native}. Keep their appearance brief (1–3 lines) unless the learner keeps talking to them.\n`;
+}
+
+// 이번 답장에 조연을 등장시킬지 정하고, 그렇다면 안내 블록을 돌려줌
+function cameoBlock(s){
+  const cast = castOf(s); if(!cast.length) return '';
+  const lastUser = [...s.messages].reverse().find(m=>m.role==='user');
+  if(!lastUser || lastUser.hidden) return '';      // 대화 시작 인사에는 등장시키지 않음
+  const text = lastUser.content;
+  const called = cast.filter(m=>new RegExp('@'+m.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?![\\p{L}\\p{N}])','iu').test(text)).slice(0,2);
+  let who = called, why = 'called';
+  if(!who.length){
+    const n = userTurnCount(s);
+    const p = CAST_P[s.castFreq||'some'] || 0;
+    if(!p || n - (s.lastCameoTurn ?? -99) < 3 || Math.random() >= p) return '';
+    who = [cast[Math.floor(Math.random()*cast.length)]]; why = 'random';
+  }
+  s.lastCameoTurn = userTurnCount(s);
+  const names = who.map(m=>m.name).join(' and ');
+  return `[CAMEO — in this reply, ${names} ${who.length>1?'join':'joins'} the scene briefly in a natural way that fits right now (a text, a call, walking in, a voice nearby…). ${why==='called' ? 'The learner called them, so they respond to the learner directly.' : 'Keep your main character as the focus.'} Write their lines as "${who[0].name}: …".]\n\n`;
+}
+
+// 답장 한 덩어리를 화자별로 나누기
+function splitSpeakers(text, s){
+  const cast = castOf(s);
+  const out = [];
+  for(const line of text.split('\n')){
+    const t = line.trim(); if(!t) continue;
+    const m = t.match(/^([^:：]{1,30})\s*[:：]\s*(.+)$/);
+    const who = m && cast.find(c=>c.name.toLowerCase()===m[1].replace(/\*+/g,'').trim().toLowerCase());
+    const speaker = who || null, body = who ? m[2].trim() : t;
+    const last = out[out.length-1];
+    if(last && last.speaker===speaker) last.text += '\n' + body;
+    else out.push({speaker, text: body});
+  }
+  return out;
+}
+function castAvatar(m){
+  if(m.photo) return `<img src="${m.photo}" alt="">`;
+  return esc((m.name||'?').trim().charAt(0).toUpperCase());
+}
+function dialogueRows(text, s){
+  const rows = [];
+  for(const part of splitSpeakers(text, s)){
+    const row = document.createElement('div'); row.className = 'row them';
+    if(part.speaker){
+      row.innerHTML = `<div class="avatar${part.speaker.photo?'':' letter'}">${castAvatar(part.speaker)}</div>`;
+      const col = document.createElement('div'); col.className = 'bubble-col';
+      col.innerHTML = `<div class="speaker">${esc(part.speaker.name)}</div>`;
+      const bub = document.createElement('div'); bub.className = 'bubble cast'; bub.textContent = part.text;
+      col.appendChild(bub); row.appendChild(col);
+    }else{
+      row.innerHTML = `<div class="avatar">${avatarInner(s)}</div>`;
+      const col = document.createElement('div'); col.className = 'bubble-col';
+      const bub = document.createElement('div'); bub.className = 'bubble'; bub.textContent = part.text;
+      col.appendChild(bub); row.appendChild(col);
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+// 듣기: 화자별 목소리로 이어 읽기
+function speechParts(content, s){
+  const parts = [];
+  for(const b of parseBlocks(content)){
+    if(b.t!=='d') continue;
+    for(const p of splitSpeakers(b.c, s)) parts.push({text:p.text, pref: p.speaker ? p.speaker.voice : voicePrefOf(s)});
+  }
+  return parts;
+}
+
+/* ---------- 조연 편집 창 ---------- */
+function openCast(target){
+  castTarget = target;
+  if(target==='new'){
+    castDraft = {list: newCastDraft.list.map(x=>({...x})), freq: newCastDraft.freq, mainId: $('charSelect').value||null};
+  }else{
+    const s = getSession(); if(!s) return;
+    castDraft = {list: (s.cast||[]).map(x=>({...x})), freq: s.castFreq||'some', mainId: s.charId||null};
+  }
+  $('castQuickName').value=''; $('castQuickDesc').value=''; $('castQuickGender').value='';
+  renderCast();
+  $('castOverlay').classList.add('show');
+}
+function closeCast(){ $('castOverlay').classList.remove('show'); }
+function renderCast(){
+  const box = $('castCharList'); box.innerHTML = '';
+  const choices = characters.filter(c=>c.id!==castDraft.mainId);
+  if(!choices.length) box.innerHTML = '<div class="memo-hint" style="margin:0">고를 수 있는 다른 캐릭터가 없어요. 👤 캐릭터 관리에서 만들거나 아래에서 빠르게 추가하세요.</div>';
+  for(const c of choices){
+    const on = castDraft.list.some(m=>m.charId===c.id);
+    const b = document.createElement('button'); b.type='button'; b.className = 'cast-chip'+(on?' sel':'');
+    b.innerHTML = `<span class="avatar${c.photo?'':' letter'}">${c.photo?`<img src="${c.photo}" alt="">`:esc(c.name.charAt(0).toUpperCase())}</span>${esc(c.name)}`;
+    b.onclick = ()=>{
+      if(on) castDraft.list = castDraft.list.filter(m=>m.charId!==c.id);
+      else{
+        if(castDraft.list.length >= CAST_MAX){ alert(`조연은 ${CAST_MAX}명까지 넣을 수 있어요.`); return; }
+        castDraft.list.push({key:'k'+Date.now().toString(36), charId:c.id, name:c.name});
+      }
+      renderCast();
+    };
+    box.appendChild(b);
+  }
+  const cur = $('castCurrent');
+  cur.innerHTML = castDraft.list.length ? '' : '<div class="memo-hint" style="margin:0">아직 조연이 없어요.</div>';
+  for(const m of castDraft.list){
+    const live = castMember(null, m);
+    const row = document.createElement('div'); row.className = 'cast-row';
+    row.innerHTML = `<span class="avatar${live.photo?'':' letter'}">${castAvatar(live)}</span><div class="cast-meta"><b>${esc(live.name)}</b><span>${m.charId ? '저장된 캐릭터' : esc(m.desc||'')}${!m.charId && m.gender ? ' · '+(m.gender==='male'?'남자':'여자')+' 목소리' : ''}</span></div><button type="button" class="btn-mini">빼기</button>`;
+    row.querySelector('button').onclick = ()=>{ castDraft.list = castDraft.list.filter(x=>x.key!==m.key); renderCast(); };
+    cur.appendChild(row);
+  }
+  [...$('castFreqSeg').children].forEach(b=>b.classList.toggle('sel', b.dataset.v===castDraft.freq));
+}
+function addQuickCast(){
+  const name = $('castQuickName').value.trim().replace(/^@/,'');
+  if(!name){ $('castQuickName').focus(); return; }
+  if(castDraft.list.length >= CAST_MAX){ alert(`조연은 ${CAST_MAX}명까지 넣을 수 있어요.`); return; }
+  if(castDraft.list.some(m=>castMember(null,m).name.toLowerCase()===name.toLowerCase())){ alert('같은 이름의 조연이 이미 있어요.'); return; }
+  castDraft.list.push({key:'k'+Date.now().toString(36), charId:null, name, desc:$('castQuickDesc').value.trim(), gender:$('castQuickGender').value});
+  $('castQuickName').value=''; $('castQuickDesc').value=''; $('castQuickGender').value='';
+  renderCast();
+}
+function saveCast(){
+  const list = castDraft.list.filter(m=>m.charId!==castDraft.mainId);
+  if(castTarget==='new'){
+    newCastDraft = {list, freq: castDraft.freq};
+    renderNewCastSummary();
+  }else{
+    const s = getSession(); if(!s) return;
+    s.cast = list; s.castFreq = castDraft.freq;
+    save(); renderChat();
+  }
+  closeCast();
+}
+function renderNewCastSummary(){
+  const names = newCastDraft.list.map(m=>castMember(null,m).name);
+  $('newCastSummary').textContent = names.length ? `${names.join(', ')} · ${{off:'@부를 때만',some:'가끔 등장',often:'자주 등장'}[newCastDraft.freq]}` : '없음';
+}
+$('castFreqSeg').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  castDraft.freq = b.dataset.v; renderCast();
+});
 
 /* ---------- 대화 제목 바꾸기 ---------- */
 function startRename(){
