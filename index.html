@@ -130,6 +130,12 @@
   /* composer */
   .composer{background:var(--panel);border-top:1px solid var(--line);padding:12px 20px 16px}
   .composer-inner{max-width:760px;margin:0 auto}
+  .report-nudge{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:13px;line-height:1.5;color:var(--ink)}
+  .report-nudge .rn-text{flex:1;min-width:180px}
+  .report-nudge small{display:block;color:var(--sub);font-size:11.5px}
+  .report-nudge button{font-size:12.5px;font-weight:700;padding:7px 12px;border-radius:9px}
+  .report-nudge .rn-later{color:var(--sub);background:transparent}
+  .report-nudge .rn-go{background:var(--accent);color:#fff}
   .hint-box{background:#F2F6F4;border:1px solid #D8E4DE;border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.7;margin-bottom:10px;white-space:pre-wrap;position:relative}
   .hint-box .close-hint{position:absolute;top:6px;right:8px;color:var(--sub);font-size:13px}
   .input-row{display:flex;gap:8px;align-items:flex-end}
@@ -238,6 +244,7 @@
   .scen:hover{border-color:#BFC7C4}
   .scen.sel{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-dk)}
   .modal-actions{display:flex;gap:9px;justify-content:flex-end;margin-top:20px}
+  .modal-actions button{white-space:nowrap}
   .btn-ghost{padding:10px 18px;border-radius:11px;font-size:14px;font-weight:600;color:var(--sub)}
   .btn-ghost:hover{background:#F3F5F5;color:var(--ink)}
   .btn-primary{padding:10px 20px;border-radius:11px;background:var(--accent);color:#fff;font-size:14px;font-weight:700}
@@ -446,6 +453,7 @@
 
     <div class="composer" id="composer" style="display:none">
       <div class="composer-inner">
+        <div class="report-nudge" id="reportNudge" style="display:none"></div>
         <div class="hint-box" id="hintBox" style="display:none"><button class="close-hint" onclick="hideHint()">✕</button><div id="hintContent"></div></div>
         <div class="input-row">
           <button class="btn-hint" id="btnHint" title="뭐라고 답할지 힌트 받기" onclick="getHints()">💡</button>
@@ -809,6 +817,15 @@
     <div class="field"><label>💾 저장 공간</label>
       <div class="store-bar"><i id="storeBarFill"></i></div>
       <div class="memo-hint" id="storageInfo">확인 중…</div>
+    </div>
+    <div class="field"><label>📝 학습 정리 제안</label>
+      <select id="setReportEvery">
+        <option value="0">묻지 않기</option>
+        <option value="10">10턴마다 물어보기</option>
+        <option value="20">20턴마다 물어보기</option>
+        <option value="30">30턴마다 물어보기</option>
+      </select>
+      <div class="memo-hint">대화가 그만큼 쌓이면 "여기까지 학습한 내용을 정리하겠습니까?"라고 물어봐요. 정리하면 지난 리포트 이후 구간만 리포트로 만들어요.</div>
     </div>
     <div class="field"><label class="toggle-line" style="font-size:13px;color:var(--ink)"><input type="checkbox" id="setReviewChat"> 🔁 대화 속 복습 단어</label>
       <div class="memo-hint">복습할 때가 된 단어 1~2개를 상대가 대화 중에 자연스럽게 써 줘요. 억지로 넣지는 않아요.</div>
@@ -1364,7 +1381,7 @@ function parseBlocks(text){
 function renderChat(){
   const s = getSession();
   const has = !!s;
-  renderReview(); renderMissionBar();
+  renderReview(); renderMissionBar(); renderReportNudge();
   $('chatHead').style.display = has?'flex':'none';
   $('messages').style.display = has?'block':'none';
   $('composer').style.display = has?'block':'none';
@@ -1587,6 +1604,7 @@ async function requestReply(s){
     const finalText = full.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
     s.messages.push({role:'assistant', content:finalText||full});
     save(); renderChat(); renderSidebar();
+    renderReportNudge();
     if(settings.autoTTS) speakText(finalText||full, s.lang, s.level, s.id+':auto'+s.messages.length, voicePrefOf(s));
   }catch(e){
     holder.remove(); connFailHelp();
@@ -2206,7 +2224,12 @@ async function generateReport(){
   const body = $('reportBody');
   body.innerHTML = '<p class="placeholder">대화를 분석하는 중… 📖</p>';
   const L = langOf(s.lang);
-  const transcript = s.messages.filter(m=>!m.hidden).slice(-40).map(m=>{
+  // 지난 리포트 이후 구간만 정리 (너무 짧으면 최근 40개, 너무 길면 최근 60개)
+  let part = s.messages.slice(s.lastReportMsgCount || 0).filter(m=>!m.hidden);
+  if(part.filter(m=>m.role==='user').length < 3) part = s.messages.filter(m=>!m.hidden).slice(-40);
+  part = part.slice(-60);
+  const statsMd = sectionStatsMd(part);
+  const transcript = part.map(m=>{
     let line = (m.role==='user'?'나: ':'상대: ') + m.content.replace(/\n+/g,' ');
     if(m.review && m.review.status==='fix' && m.review.corrected) line += `\n  (교정됨 → ${m.review.corrected})`;
     return line;
@@ -2219,8 +2242,10 @@ async function generateReport(){
       body.innerHTML = mdLite(partial.replace(/<think>[\s\S]*?(<\/think>|$)/,''));
       body.scrollTop = body.scrollHeight;
     });
-    const text = full.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
+    const text = statsMd + full.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
     const entry = {id:'r'+Date.now().toString(36), sessionId:s.id, title:s.title, lang:s.lang, createdAt:Date.now(), text};
+    s.lastReportTurn = userTurnCount(s); s.lastReportMsgCount = s.messages.length; delete s.reportSnoozeTo;
+    renderReportNudge();
     reports.push(entry); currentReportId = entry.id;
     save();
     buildReportSelect(sessionReports(s));
@@ -2986,6 +3011,7 @@ function openSettings(){
   $('setNoThink').checked = !!settings.noThink;
   $('setLight').checked = !!settings.lightMode;
   $('setReviewChat').checked = settings.reviewInChat !== false;
+  $('setReportEvery').value = String(settings.reportEvery ?? 20);
   updateStorageInfo();
   renderThemeSw();
   $('testResult').textContent='';
@@ -3118,6 +3144,7 @@ function saveSettings(){
   settings.noThink = $('setNoThink').checked;
   settings.lightMode = $('setLight').checked;
   settings.reviewInChat = $('setReviewChat').checked;
+  settings.reportEvery = +$('setReportEvery').value;
   save(); closeSettings(); renderChat();
 }
 
@@ -3147,6 +3174,57 @@ function renderThemeSw(){
     b.onclick = ()=>{ settings.theme = t.id; applyTheme(t.id); save(); renderThemeSw(); };
     box.appendChild(b);
   }
+}
+
+/* ---------- 📝 학습 정리 제안 (게임 자동 저장처럼 일정 턴마다 물어봄) ---------- */
+const userTurnCount = s => s.messages.filter(m=>m.role==='user' && !m.hidden).length;
+function reportDue(s){
+  const every = settings.reportEvery ?? 20;
+  if(!s || !every) return false;
+  const n = userTurnCount(s);
+  if(s.lastReportTurn === undefined){
+    // 이 기능 전에 이미 리포트를 만든 대화는 지금 시점부터 셈
+    s.lastReportTurn = sessionReports(s).length ? n : 0;
+  }
+  if(s.reportSnoozeTo && n < s.reportSnoozeTo) return false;
+  return n - s.lastReportTurn >= every;
+}
+function renderReportNudge(){
+  const el = $('reportNudge'); if(!el) return;
+  const s = getSession();
+  if(!reportDue(s)){ el.style.display='none'; return; }
+  const n = userTurnCount(s) - (s.lastReportTurn||0);
+  el.innerHTML = `<div class="rn-text">📝 여기까지 학습한 내용을 정리하겠습니까?<small>지난 정리 이후 ${n}턴을 주고받았어요</small></div>
+    <button class="rn-later" onclick="snoozeReport()">나중에</button><button class="rn-go" onclick="reportNow()">정리하기</button>`;
+  el.style.display = 'flex';
+}
+function snoozeReport(){
+  const s = getSession(); if(!s) return;
+  s.reportSnoozeTo = userTurnCount(s) + 10;   // 10턴 뒤에 다시 물어봄
+  save(); renderReportNudge();
+}
+function reportNow(){
+  const s = getSession(); if(!s) return;
+  $('reportNudge').style.display='none';
+  $('reportOverlay').classList.add('show');
+  buildReportSelect(sessionReports(s));
+  generateReport();
+}
+// 리포트 맨 위에 붙일 구간 통계 (모델 요청 없이 앱이 계산)
+function sectionStatsMd(part){
+  let ok=0, all=0; const counts={};
+  for(const m of part){
+    if(m.role!=='user' || !m.review) continue;
+    if(m.review.status==='ok' || m.review.status==='tip'){ ok++; all++; }
+    else if(m.review.status==='fix'){ all++; for(const e of (m.review.errors||[])) counts[e.type||'other']=(counts[e.type||'other']||0)+1; }
+  }
+  if(!all) return '';
+  const top = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([t,c])=>`${ERR_TYPES[t]||'기타'} ${c}회`).join(', ');
+  return `## 📈 이번 구간 한눈에
+- 교정받은 문장 ${all}개 중 **${ok}개는 틀린 데 없음 (${Math.round(ok*100/all)}%)**
+` + (top ? `- 자주 한 실수: ${top}
+` : '') + `
+`;
 }
 
 /* ---------- 대화 제목 바꾸기 ---------- */
