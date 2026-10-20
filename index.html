@@ -304,6 +304,13 @@
   .mk-why{color:#6B6350;font-size:12.5px;margin:1px 0 4px}
   .mk-orig{color:var(--sub);font-size:12.5px;margin-top:6px;word-break:break-word}
   .mk-meta{color:var(--sub);font-size:11px;margin-top:5px}
+  .photo-card{background:var(--them);border:1px solid var(--them-border);border-radius:var(--radius);border-bottom-left-radius:5px;padding:6px;max-width:260px}
+  .photo-card img{display:block;width:100%;max-height:320px;object-fit:cover;border-radius:12px}
+  .photo-credit{font-size:11px;color:var(--sub);padding:5px 4px 1px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .photo-credit a{color:inherit;text-decoration:underline}
+  .photo-ph{display:flex;flex-direction:column;gap:2px;padding:10px 12px;font-size:13px;color:var(--ink)}
+  .photo-ph span{font-size:11.5px;color:var(--sub)}
+  .photo-card .btn-mini{margin:0 6px 6px}
   .avatar.letter{background:#E2EBF3;color:#3B4A5A;font-weight:800;font-size:14px}
   .speaker{font-size:11px;font-weight:700;color:var(--chat-sub);margin:0 0 2px 4px}
   .row.them .bubble.cast{background:var(--them);border-style:dashed}
@@ -867,6 +874,10 @@
       <div class="store-bar"><i id="storeBarFill"></i></div>
       <div class="memo-hint" id="storageInfo">확인 중…</div>
     </div>
+    <div class="field"><label>📷 캐릭터가 보내는 사진 (무료 · Pexels)</label>
+      <input type="password" id="setPexels" placeholder="Pexels API 키 (비워 두면 사용 안 함)" autocomplete="off">
+      <div class="memo-hint">캐릭터가 이야기 속에서 사진을 보내면 <b>📷 사진 보기</b>로 실제 사진을 찾아 보여줘요. <a href="https://www.pexels.com/api/" target="_blank" rel="noopener">pexels.com/api</a>에서 가입하면 키를 무료로 바로 받을 수 있어요 (시간당 200장). 키는 이 브라우저에만 저장돼요.</div>
+    </div>
     <div class="field"><label>📝 학습 정리 제안</label>
       <select id="setReportEvery">
         <option value="0">묻지 않기</option>
@@ -1212,7 +1223,8 @@ RULES:
 - Per reply: 0–2 narration lines and 1–4 dialogue sentences. Keep it chat-like, not essay-like.
 - Drive the conversation naturally: react, ask questions, create small events in the scene.
 - Never break character, never explain grammar, never use Korean unless the learner explicitly asks for help.
-- The learner's latest message may start with [WORLD INFO], [REVIEW WORDS] or [CAMEO] blocks written for you only. Follow CAMEO notes. Treat WORLD INFO as established background facts; follow REVIEW WORDS only when natural. Never mention or quote these blocks.
+- The learner's latest message may start with [WORLD INFO], [REVIEW WORDS] or [CAMEO] blocks written for you only. Follow CAMEO notes.${settings.pexelsKey ? `
+- PHOTOS: only when your character actually sends a photo in the story (or the learner asks for one), add it on its own line as [PHOTO: 2–5 English keywords for a stock-photo search, e.g. snowy window night street]. Describe scenes or objects, never a specific person's face. At most one per reply, and don't overuse it.` : ''} Treat WORLD INFO as established background facts; follow REVIEW WORDS only when natural. Never mention or quote these blocks.
 
 SCENARIO: ${s.scenario}${s.detail ? `\nSCENARIO DETAILS: ${s.detail}` : ''}
 
@@ -1393,7 +1405,7 @@ function renderSidebar(){
       <div class="avatar">${avatarInner(s)}</div>
       <div class="meta">
         <div class="name">${esc(s.title)}<span class="lang-tag">${langOf(s.lang).label}</span></div>
-        <div class="preview">${last?esc(last.content.replace(/\*[^*]*\*/g,'').trim().slice(0,40)):'…'}</div>
+        <div class="preview">${last?esc((stripPhotoTags(last.content).replace(/\*[^*]*\*/g,'').trim() || '📷 사진').slice(0,40)):'…'}</div>
       </div>
       <button class="del" title="삭제">🗑</button>`;
     div.onclick = e => {
@@ -1419,6 +1431,8 @@ function parseBlocks(text){
   const flush=()=>{ if(dial.length){blocks.push({t:'d', c:dial.join('\n')}); dial=[];} };
   for(let line of text.split('\n')){
     const trimmed = line.trim();
+    const pm = trimmed.match(PHOTO_RE);
+    if(pm){ flush(); blocks.push({t:'p', c:pm[1].trim()}); continue; }
     const m = trimmed.match(/^\*+([^*]+)\*+$/);
     if(m){ flush(); blocks.push({t:'n', c:m[1].trim()}); }
     else if(trimmed) dial.push(trimmed.replace(/^\*+|\*+$/g,''));
@@ -1452,6 +1466,8 @@ function messageNode(m, idx, s){
     for(const b of parseBlocks(m.content)){
       if(b.t==='n'){
         const n=document.createElement('div'); n.className='narration'; n.textContent=b.c; wrap.appendChild(n);
+      }else if(b.t==='p'){
+        wrap.appendChild(photoCard(m, idx, b.c, s, false));
       }else{
         for(const row of dialogueRows(b.c, s)) wrap.appendChild(row);
       }
@@ -1523,7 +1539,7 @@ async function sendMessage(){
    예전엔 메시지마다 3번 따로 요청했지만, 같은 대화를 보는 작업이라 하나로 합쳐 무료 한도를 아낌.
    응답이 깨지면 그때만 예전 방식(따로 요청)으로 다시 시도. */
 const LEVEL_KO = {beginner:'초급', intermediate:'중급', advanced:'고급'};
-const plainMsg = t => (t||'').replace(/\*[^*]*\*/g,' ').replace(/\s+/g,' ').trim();
+const plainMsg = t => stripPhotoTags(t).replace(/\*[^*]*\*/g,' ').replace(/\s+/g,' ').trim();
 async function analyzeTurn(s, msg, replyText){
   const L = langOf(s.lang);
   const idx = s.messages.indexOf(msg);
@@ -1662,6 +1678,7 @@ function messageNodeLite(text, s){
   const wrap=document.createElement('div');
   for(const b of parseBlocks(text)){
     if(b.t==='n'){ const n=document.createElement('div'); n.className='narration'; n.textContent=b.c; wrap.appendChild(n); }
+    else if(b.t==='p'){ wrap.appendChild(photoCard(null, -1, b.c, s, true)); }
     else{
       for(const row of dialogueRows(b.c, s)) wrap.appendChild(row);
     }
@@ -1678,7 +1695,7 @@ async function explainMessage(idx, btn){
   try{
     const full = await ollamaChat([
       {role:'system', content:`You are a ${L.native} tutor for Korean learners. Answer ONLY in Korean. Be concise.`},
-      {role:'user', content:`다음 ${L.native} 메시지를 한국어로 해설해줘. ① 전체 자연스러운 번역 ② 핵심 표현 2~4개의 의미·뉘앙스·활용 예. 불필요한 서론 없이 바로:\n\n"""${m.content.replace(/\*[^*]*\*/g,' ')}"""`}
+      {role:'user', content:`다음 ${L.native} 메시지를 한국어로 해설해줘. ① 전체 자연스러운 번역 ② 핵심 표현 2~4개의 의미·뉘앙스·활용 예. 불필요한 서론 없이 바로:\n\n"""${stripPhotoTags(m.content).replace(/\*[^*]*\*/g,' ')}"""`}
     ], ()=>{});
     m.note = full.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
     save();
@@ -3209,6 +3226,7 @@ function openSettings(){
   $('setLight').checked = !!settings.lightMode;
   $('setReviewChat').checked = settings.reviewInChat !== false;
   $('setReportEvery').value = String(settings.reportEvery ?? 20);
+  $('setPexels').value = settings.pexelsKey || '';
   updateStorageInfo();
   renderThemeSw();
   $('testResult').textContent='';
@@ -3342,6 +3360,7 @@ function saveSettings(){
   settings.lightMode = $('setLight').checked;
   settings.reviewInChat = $('setReviewChat').checked;
   settings.reportEvery = +$('setReportEvery').value;
+  settings.pexelsKey = $('setPexels').value.trim();
   save(); closeSettings(); renderChat();
 }
 
@@ -3422,6 +3441,59 @@ function sectionStatsMd(part){
 ` + (top ? `- 자주 한 실수: ${top}
 ` : '') + `
 `;
+}
+
+/* =====================================================================
+   📷 캐릭터가 보내는 사진 (무료 사진 검색: Pexels)
+   - 모델은 사진을 보낼 때 [PHOTO: 영어 검색어] 줄만 남기고, 앱이 버튼을 눌렀을 때 실제 사진을 찾아옴
+   - Pexels 규칙에 따라 찍은 사람 이름과 Pexels 링크를 함께 표시
+   ===================================================================== */
+const PHOTO_RE = /^\*?\s*\[(?:PHOTO|사진)\s*[:：]\s*([^\]]{1,120})\]\s*\*?$/i;
+const stripPhotoTags = t => (t||'').split('\n').filter(l=>!PHOTO_RE.test(l.trim())).join('\n');
+function photoCard(m, idx, q, s, live){
+  const row = document.createElement('div'); row.className = 'row them';
+  row.innerHTML = `<div class="avatar">${avatarInner(s)}</div>`;
+  const col = document.createElement('div'); col.className = 'bubble-col';
+  const card = document.createElement('div'); card.className = 'photo-card';
+  const ph = m && m.photos && m.photos[q];
+  if(live){
+    card.innerHTML = `<div class="photo-ph">📷 사진</div>`;
+  }else if(ph && ph.list && ph.list[ph.i]){
+    const p = ph.list[ph.i];
+    card.innerHTML = `<a href="${esc(p.url)}" target="_blank" rel="noopener"><img src="${esc(p.src)}" alt="${esc(p.alt||q)}" loading="lazy"></a>
+      <div class="photo-credit">📷 <a href="${esc(p.byUrl)}" target="_blank" rel="noopener">${esc(p.by)}</a> · <a href="https://www.pexels.com" target="_blank" rel="noopener">Pexels</a>
+      ${ph.list.length>1 ? `<button type="button" class="tool-btn" data-act="next">🔄 다른 사진</button>` : ''}</div>`;
+    const nb = card.querySelector('[data-act=next]');
+    if(nb) nb.onclick = ()=>{ ph.i = (ph.i+1) % ph.list.length; save(); renderChat(); };
+  }else{
+    const hasKey = !!settings.pexelsKey;
+    card.innerHTML = `<div class="photo-ph">📷 <b>사진</b><span>${esc(q)}</span></div>
+      <button type="button" class="btn-mini" data-act="load">${hasKey ? '사진 보기' : '⚙ 무료 사진 키 넣기'}</button>`;
+    card.querySelector('[data-act=load]').onclick = e => hasKey ? loadPhoto(m, q, e.target) : openSettings();
+  }
+  col.appendChild(card); row.appendChild(col);
+  return row;
+}
+async function loadPhoto(m, q, btn){
+  btn.disabled = true; btn.textContent = '찾는 중…';
+  try{
+    const res = await fetch('https://api.pexels.com/v1/search?per_page=10&query='+encodeURIComponent(q), {headers:{Authorization: settings.pexelsKey}});
+    if(res.status===401 || res.status===403) throw new Error('key');
+    if(res.status===429) throw new Error('limit');
+    if(!res.ok) throw new Error('http');
+    const j = await res.json();
+    const list = (j.photos||[]).map(p=>({src:p.src.medium||p.src.large, url:p.url, by:p.photographer, byUrl:p.photographer_url, alt:p.alt||''}));
+    if(!list.length){ btn.textContent = '맞는 사진이 없어요'; return; }
+    m.photos = m.photos || {};
+    m.photos[q] = {list, i:0};
+    save(); renderChat();
+  }catch(e){
+    btn.disabled = false;
+    btn.textContent = '다시 시도';
+    showBanner(e.message==='key' ? '📷 Pexels 키가 맞지 않아요. ⚙ 설정에서 다시 확인해 주세요.'
+      : e.message==='limit' ? '📷 사진 검색 한도(시간당 200번)에 걸렸어요. 잠시 후 다시 시도해 주세요.'
+      : '📷 사진 서비스에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.');
+  }
 }
 
 /* =====================================================================
