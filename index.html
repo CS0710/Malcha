@@ -49,7 +49,13 @@
   .theme-sw .tp i{display:block;height:9px;border-radius:5px}
   .theme-sw .tp i:first-child{width:55%}
   .theme-sw .tp i:last-child{width:45%;align-self:flex-end}
+  :root{--fs:1}
   body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidden}
+  .font-sw{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .font-sw button{border:2px solid var(--line);border-radius:12px;padding:9px 10px;background:var(--panel);text-align:left;color:var(--ink)}
+  .font-sw button.sel{border-color:var(--accent)}
+  .font-sw b{display:block;font-size:15px;font-weight:700;line-height:1.3}
+  .font-sw span{display:block;font-size:12px;color:var(--sub);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   button{font-family:inherit;cursor:pointer;border:none;background:none}
   input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink)}
   ::-webkit-scrollbar{width:8px}
@@ -106,12 +112,12 @@
   .row .avatar{width:32px;height:32px;min-width:32px;border-radius:50%;background:#F0EDE6;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:2px}
   .bubble-col{max-width:72%;display:flex;flex-direction:column;gap:4px}
   .row.me .bubble-col{align-items:flex-end}
-  .bubble{padding:10px 14px;border-radius:var(--radius);font-size:14.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;position:relative}
+  .bubble{padding:10px 14px;border-radius:var(--radius);font-size:calc(14.5px * var(--fs));line-height:1.55;white-space:pre-wrap;word-break:break-word;position:relative}
   .row.them .bubble{background:var(--them);border:1px solid var(--them-border);border-bottom-left-radius:5px}
   .row.me .bubble{background:var(--me);color:var(--me-ink);border-bottom-right-radius:5px}
 
   /* narration — the novel interlude */
-  .narration{font-family:var(--serif);font-style:italic;color:var(--narr);text-align:center;font-size:14px;line-height:1.7;max-width:520px;margin:16px auto 6px;padding:0 12px}
+  .narration{font-family:var(--serif);font-style:italic;color:var(--narr);text-align:center;font-size:calc(14px * var(--fs));line-height:1.7;max-width:520px;margin:16px auto 6px;padding:0 12px}
   .narration::before{content:"✦";font-style:normal;font-size:9px;display:block;margin-bottom:6px;opacity:.55;letter-spacing:4px}
 
   .tools{display:flex;gap:6px;margin-top:2px}
@@ -146,7 +152,7 @@
   .voice-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
   .voice-row input[type=range]{flex:1;min-width:120px}
   .btn-hint:hover{background:#E5E8E9}
-  textarea#input{flex:1;resize:none;border:1px solid var(--line);border-radius:14px;padding:11px 14px;font-size:14.5px;line-height:1.5;max-height:130px;background:#FAFBFB;outline:none}
+  textarea#input{flex:1;resize:none;border:1px solid var(--line);border-radius:14px;padding:11px 14px;font-size:calc(14.5px * var(--fs));line-height:1.5;max-height:130px;background:#FAFBFB;outline:none}
   textarea#input:focus{border-color:var(--accent);background:#fff}
   .btn-send{min-width:64px;height:42px;border-radius:12px;background:var(--accent);color:#fff;font-weight:700;font-size:14px;transition:background .15s}
   .btn-send:hover{background:var(--accent-dk)}
@@ -393,6 +399,7 @@
   /* mobile */
   @media (max-width:760px){
     textarea#input,.field input[type=text],.field textarea,.field select,#vocabSearch{font-size:16px}  /* iOS 포커스 확대 방지 */
+    textarea#input{font-size:max(16px, calc(14.5px * var(--fs)))}
     .composer{padding-bottom:calc(14px + env(safe-area-inset-bottom))}
     .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:40;transform:translateX(-100%);transition:transform .22s ease;box-shadow:8px 0 30px rgba(0,0,0,.12)}
     .sidebar.open{transform:translateX(0)}
@@ -815,6 +822,17 @@
     <h2>설정</h2>
     <div class="field"><label>🎨 테마</label>
       <div class="theme-sw" id="themeSw"></div>
+    </div>
+    <div class="field"><label>🔤 폰트</label>
+      <div class="font-sw" id="fontSw"></div>
+    </div>
+    <div class="field"><label>🔍 대화 글자 크기</label>
+      <div class="seg" id="fontSizeSeg">
+        <button type="button" data-v="0.9">작게</button>
+        <button type="button" data-v="1">보통</button>
+        <button type="button" data-v="1.12">크게</button>
+        <button type="button" data-v="1.25">아주 크게</button>
+      </div>
     </div>
     <div class="field"><label>모델 실행 방식</label>
       <div class="seg" id="provSeg">
@@ -3228,7 +3246,7 @@ function openSettings(){
   $('setReportEvery').value = String(settings.reportEvery ?? 20);
   $('setPexels').value = settings.pexelsKey || '';
   updateStorageInfo();
-  renderThemeSw();
+  renderThemeSw(); renderFontSw();
   $('testResult').textContent='';
   populateModelSelect([settings.model].filter(Boolean));
   refreshModels(true);
@@ -3687,6 +3705,51 @@ function startRename(){
   inp.onblur = ()=>finish(true);
 }
 
+/* ---------- 폰트 ---------- */
+// 한글·영어 모두 지원하는 무료 웹폰트 (Google Fonts). 고를 때만 불러옴
+const FONTS = [
+  {id:'system',  name:'기본',     desc:'기기 기본 글꼴', family:''},
+  {id:'noto',    name:'노토 산스', desc:'깔끔하고 또렷한', family:"'Noto Sans KR'", css:'Noto+Sans+KR:wght@400;600;700'},
+  {id:'nanumg',  name:'나눔고딕',  desc:'익숙하고 편안한', family:"'Nanum Gothic'", css:'Nanum+Gothic:wght@400;700;800'},
+  {id:'gowun',   name:'고운돋움',  desc:'부드럽고 단정한', family:"'Gowun Dodum'", css:'Gowun+Dodum'},
+  {id:'nanumm',  name:'나눔명조',  desc:'책 같은 명조체', family:"'Nanum Myeongjo'", css:'Nanum+Myeongjo:wght@400;700'},
+  {id:'jua',     name:'주아',      desc:'동글동글 귀여운', family:"'Jua'", css:'Jua'},
+  {id:'gaegu',   name:'개구',      desc:'손글씨 느낌', family:"'Gaegu'", css:'Gaegu:wght@400;700'},
+  {id:'ibm',     name:'IBM 플렉스', desc:'모던하고 단단한', family:"'IBM Plex Sans KR'", css:'IBM+Plex+Sans+KR:wght@400;600;700'},
+];
+const SYSTEM_SANS = `-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic","Hiragino Sans","Noto Sans CJK KR",sans-serif`;
+function loadFontCss(f){
+  if(!f.css || document.getElementById('font-'+f.id)) return;
+  const l = document.createElement('link'); l.rel='stylesheet'; l.id='font-'+f.id;
+  l.href = `https://fonts.googleapis.com/css2?family=${f.css}&display=swap`;
+  document.head.appendChild(l);
+}
+function applyFont(id, size){
+  const f = FONTS.find(x=>x.id===id) || FONTS[0];
+  loadFontCss(f);
+  document.documentElement.style.setProperty('--sans', f.family ? `${f.family},${SYSTEM_SANS}` : SYSTEM_SANS);
+  document.documentElement.style.setProperty('--fs', String(size || 1));
+  try{ localStorage.setItem('malcha_font', JSON.stringify({id:f.id, size:size||1})); }catch(e){}
+}
+function renderFontSw(){
+  const box = $('fontSw'); box.innerHTML = '';
+  const cur = settings.font || 'system';
+  for(const f of FONTS){
+    loadFontCss(f);   // 미리보기용 (화면에 쓰인 글자만 내려받아요)
+    const b = document.createElement('button'); b.type='button';
+    b.className = f.id===cur ? 'sel' : '';
+    b.style.fontFamily = f.family ? `${f.family},${SYSTEM_SANS}` : SYSTEM_SANS;
+    b.innerHTML = `<b>${f.name} · Aa</b><span>${f.desc} · Hello!</span>`;
+    b.onclick = ()=>{ settings.font = f.id; applyFont(f.id, settings.fontSize); save(); renderFontSw(); };
+    box.appendChild(b);
+  }
+  [...$('fontSizeSeg').children].forEach(b=>b.classList.toggle('sel', +b.dataset.v===(settings.fontSize||1)));
+}
+$('fontSizeSeg').addEventListener('click', e=>{
+  const b = e.target.closest('button'); if(!b) return;
+  settings.fontSize = +b.dataset.v; applyFont(settings.font, settings.fontSize); save(); renderFontSw();
+});
+
 /* ---------- misc UI ---------- */
 function toggleSidebar(force){
   const sb=$('sidebar');
@@ -3726,9 +3789,11 @@ if('serviceWorker' in navigator && location.protocol==='https:'){
 
 /* ---------- init ---------- */
 try{ applyTheme(localStorage.getItem('malcha_theme') || 'matcha'); }catch(e){}
+try{ const f = JSON.parse(localStorage.getItem('malcha_font')||'null'); if(f) applyFont(f.id, f.size); }catch(e){}
 (async()=>{
   await initStorage();
   applyTheme(settings.theme || 'matcha');
+  applyFont(settings.font || 'system', settings.fontSize || 1);
   renderSidebar(); renderChat();
   try{ await fetchModels(); $('connDot').className='conn-dot ok'; }catch(e){ $('connDot').className='conn-dot bad'; }
 })();

@@ -4,12 +4,23 @@ const CACHE = 'malcha-v1';
 self.addEventListener('install', e=>{
   e.waitUntil(caches.open(CACHE).then(c=>c.addAll(['./', './index.html'])).then(()=>self.skipWaiting()));
 });
+const FONT_CACHE = 'malcha-fonts-v1';
 self.addEventListener('activate', e=>{
-  e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
+  e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE && k!==FONT_CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
 });
 self.addEventListener('fetch', e=>{
   const req = e.request;
-  if(req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  if(req.method !== 'GET') return;
+  const host = new URL(req.url).hostname;
+  // 구글 폰트: 한 번 받은 폰트는 저장해 두고 오프라인에서도 사용 (cache-first)
+  if(host==='fonts.googleapis.com' || host==='fonts.gstatic.com'){
+    e.respondWith(caches.open(FONT_CACHE).then(async c=>{
+      const hit = await c.match(req); if(hit) return hit;
+      const res = await fetch(req); if(res.ok || res.type==='opaque') c.put(req, res.clone()); return res;
+    }));
+    return;
+  }
+  if(new URL(req.url).origin !== location.origin) return;
   e.respondWith((async()=>{
     const cache = await caches.open(CACHE);
     try{
