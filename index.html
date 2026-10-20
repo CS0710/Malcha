@@ -51,6 +51,7 @@
   .theme-sw .tp i:last-child{width:45%;align-self:flex-end}
   :root{--fs:1}
   body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidden}
+  .sync-side.warn{color:#B0711E}
   .font-sw{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .font-sw button{border:2px solid var(--line);border-radius:12px;padding:9px 10px;background:var(--panel);text-align:left;color:var(--ink)}
   .font-sw button.sel{border-color:var(--accent)}
@@ -436,6 +437,7 @@
       <button class="btn-settings" onclick="openStudy()">📖 학습 노트 · 단어장<span class="due-badge" id="dueBadge" style="display:none" title="오늘 복습할 카드"></span></button>
       <button class="btn-settings" onclick="openChars()">👤 캐릭터 관리</button>
       <button class="btn-settings" onclick="openLore()">📜 로어북</button>
+      <button class="btn-settings sync-side" id="btnSyncSide" onclick="syncNow(true)" style="display:none">☁️ <span>동기화</span></button>
       <button class="btn-settings" onclick="openSettings()">⚙ 설정 · 모델 연결<span class="conn-dot" id="connDot"></span></button>
       <div style="display:flex;gap:6px;margin-top:7px">
         <button class="btn-io" onclick="exportData()">⬇ 대화 내보내기</button>
@@ -892,6 +894,13 @@
       <div class="store-bar"><i id="storeBarFill"></i></div>
       <div class="memo-hint" id="storageInfo">확인 중…</div>
     </div>
+    <div class="field"><label>☁️ 동기화 (구글 드라이브)</label>
+      <div id="syncBox"></div>
+      <div class="memo-hint">대화·캐릭터·단어장·로어북·리포트를 내 구글 드라이브의 <b>숨김 앱 폴더</b>에 저장해서 폰과 노트북을 맞춰요. 나만 볼 수 있고, API 키와 설정은 기기마다 따로예요.</div>
+      <details style="margin-top:6px"><summary class="memo-hint" style="cursor:pointer">고급: 구글 클라이언트 ID</summary>
+        <input type="text" id="setGClient" placeholder="…apps.googleusercontent.com" style="margin-top:6px">
+      </details>
+    </div>
     <div class="field"><label>📷 캐릭터가 보내는 사진 (무료 · Pexels)</label>
       <input type="password" id="setPexels" placeholder="Pexels API 키 (비워 두면 사용 안 함)" autocomplete="off">
       <div class="memo-hint">캐릭터가 이야기 속에서 사진을 보내면 <b>📷 사진 보기</b>로 실제 사진을 찾아 보여줘요. <a href="https://www.pexels.com/api/" target="_blank" rel="noopener">pexels.com/api</a>에서 가입하면 키를 무료로 바로 받을 수 있어요 (시간당 200장). 키는 이 브라우저에만 저장돼요.</div>
@@ -1110,7 +1119,7 @@ async function flushSave(){
   }
 }
 // 짧게 모아서 한 번에 저장 (스트리밍 중 잦은 저장 호출 대비)
-const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 40); };
+const save = () => { clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 40); if(typeof scheduleAutoSync==='function') scheduleAutoSync(); };
 addEventListener('pagehide', ()=>{ if(saveTimer) flushSave(); });
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden' && saveTimer) flushSave(); });
 
@@ -3245,6 +3254,9 @@ function openSettings(){
   $('setReviewChat').checked = settings.reviewInChat !== false;
   $('setReportEvery').value = String(settings.reportEvery ?? 20);
   $('setPexels').value = settings.pexelsKey || '';
+  $('setGClient').value = settings.googleClientId || '';
+  renderSyncBox();
+  if(syncClientId()) loadGsi().catch(()=>{});   // 연결 버튼을 누를 때 바로 창이 뜨도록 미리 불러둠
   updateStorageInfo();
   renderThemeSw(); renderFontSw();
   $('testResult').textContent='';
@@ -3379,6 +3391,7 @@ function saveSettings(){
   settings.reviewInChat = $('setReviewChat').checked;
   settings.reportEvery = +$('setReportEvery').value;
   settings.pexelsKey = $('setPexels').value.trim();
+  settings.googleClientId = $('setGClient').value.trim();
   save(); closeSettings(); renderChat();
 }
 
@@ -3416,18 +3429,21 @@ function reportDue(s){
   const every = settings.reportEvery ?? 20;
   if(!s || !every) return false;
   const n = userTurnCount(s);
-  if(s.lastReportTurn === undefined){
-    // 이 기능 전에 이미 리포트를 만든 대화는 지금 시점부터 셈
-    s.lastReportTurn = sessionReports(s).length ? n : 0;
-  }
   if(s.reportSnoozeTo && n < s.reportSnoozeTo) return false;
-  return n - s.lastReportTurn >= every;
+  return n - reportBaseline(s) >= every;
+}
+// 마지막 정리 시점의 턴 수. 화면을 그릴 때 데이터를 바꾸지 않도록 계산만 함 (동기화가 '수정됨'으로 오해하지 않게)
+function reportBaseline(s){
+  if(s.lastReportTurn !== undefined) return s.lastReportTurn;
+  const r = sessionReports(s)[0];   // 이 기능 전에 만든 리포트가 있으면 그 시점까지의 턴 수
+  if(!r) return 0;
+  return s.messages.filter(m=>m.role==='user' && !m.hidden && (!m.at || m.at <= r.createdAt)).length;
 }
 function renderReportNudge(){
   const el = $('reportNudge'); if(!el) return;
   const s = getSession();
   if(!reportDue(s)){ el.style.display='none'; return; }
-  const n = userTurnCount(s) - (s.lastReportTurn||0);
+  const n = userTurnCount(s) - reportBaseline(s);
   el.innerHTML = `<div class="rn-text">📝 여기까지 학습한 내용을 정리하겠습니까?<small>지난 정리 이후 ${n}턴을 주고받았어요</small></div>
     <button class="rn-later" onclick="snoozeReport()">나중에</button><button class="rn-go" onclick="reportNow()">정리하기</button>`;
   el.style.display = 'flex';
@@ -3750,6 +3766,210 @@ $('fontSizeSeg').addEventListener('click', e=>{
   settings.fontSize = +b.dataset.v; applyFont(settings.font, settings.fontSize); save(); renderFontSw();
 });
 
+/* =====================================================================
+   ☁️ 구글 드라이브 동기화
+   - 내 드라이브의 숨김 앱 폴더(appDataFolder)에 malcha-sync.json 하나로 저장. 나만 볼 수 있음
+   - 동기화 대상: 대화·캐릭터·페르소나·단어장·로어북·리포트 (API 키와 설정은 기기마다 따로)
+   - 병합: '지난 동기화 때 상태(base)'와 비교하는 3방향 병합
+       한쪽만 바뀜 → 바뀐 쪽 / 한쪽에서 지움(다른 쪽은 그대로) → 지움 / 양쪽이 다르게 바뀜 → 대화는 메시지 많은 쪽, 나머지는 이 기기 쪽
+   ===================================================================== */
+const DEFAULT_GOOGLE_CLIENT_ID = '';
+const SYNC_FILE = 'malcha-sync.json';
+const SYNC_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const SYNC_KEYS = ['sessions','characters','personas','vocab','lorebook','reports'];
+let gsiLoad = null, syncToken = null, syncing = false, syncTimer = null, syncStatus = {kind:'idle', msg:''};
+const syncClientId = () => (settings.googleClientId || DEFAULT_GOOGLE_CLIENT_ID || '').trim();
+
+function stableStringify(v){
+  if(v === null || typeof v !== 'object') return JSON.stringify(v);
+  if(Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']';
+  return '{' + Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+stableStringify(v[k])).join(',') + '}';
+}
+function hashStr(str){
+  let h = 0x811c9dc5;
+  for(let i=0; i<str.length; i++){ h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h>>>0).toString(36) + '.' + str.length.toString(36);
+}
+const itemHash = it => hashStr(stableStringify(it));
+
+function mergeCollection(key, local, remote, base){
+  const L = new Map(local.filter(x=>x&&x.id).map(x=>[x.id,x]));
+  const R = new Map(remote.filter(x=>x&&x.id).map(x=>[x.id,x]));
+  const order = [...L.keys(), ...[...R.keys()].filter(id=>!L.has(id))];
+  for(const id of Object.keys(base||{})) if(!L.has(id) && !R.has(id)) order.push(id);
+  const out = [];
+  for(const id of order){
+    const l = L.get(id), r = R.get(id), b = base ? base[id] : undefined;
+    let pick = null;
+    if(l && r){
+      const hl = itemHash(l), hr = itemHash(r);
+      if(hl===hr || b===hr) pick = l;          // 같거나 저쪽은 그대로 → 이 기기 것
+      else if(b===hl) pick = r;               // 이 기기는 그대로 → 저쪽 것
+      else pick = (key==='sessions' && (r.messages||[]).length > (l.messages||[]).length) ? r : l;   // 양쪽 다 바뀜
+    }else if(l){
+      pick = (b!==undefined && b===itemHash(l)) ? null : l;   // 저쪽에서 지웠고 이쪽은 그대로면 지움
+    }else if(r){
+      pick = (b!==undefined && b===itemHash(r)) ? null : r;   // 이쪽에서 지웠고 저쪽은 그대로면 지움
+    }
+    if(pick) out.push(pick);
+  }
+  return out;
+}
+
+function loadGsi(){
+  if(window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
+  if(gsiLoad) return gsiLoad;
+  gsiLoad = new Promise((res, rej)=>{
+    const sc = document.createElement('script');
+    sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true;
+    sc.onload = ()=>res(); sc.onerror = ()=>{ gsiLoad = null; rej(new Error('gsi')); };
+    document.head.appendChild(sc);
+  });
+  return gsiLoad;
+}
+function storedToken(){
+  try{ const t = JSON.parse(localStorage.getItem('malcha_gtoken')||'null'); if(t && t.exp > Date.now()+60000) return t.t; }catch(e){}
+  return null;
+}
+// 구글 로그인 창: 버튼을 눌렀을 때만 열림 (브라우저가 자동 팝업을 막기 때문)
+async function requestToken(){
+  await loadGsi();
+  return new Promise((res, rej)=>{
+    const tc = google.accounts.oauth2.initTokenClient({
+      client_id: syncClientId(), scope: SYNC_SCOPE, prompt: '',
+      callback: r=>{
+        if(r.error){ rej(new Error(r.error)); return; }
+        try{ localStorage.setItem('malcha_gtoken', JSON.stringify({t:r.access_token, exp:Date.now()+(+r.expires_in||3600)*1000})); }catch(e){}
+        res(r.access_token);
+      },
+      error_callback: e=>rej(new Error((e && e.type) || 'popup'))
+    });
+    tc.requestAccessToken();
+  });
+}
+async function gfetch(url, opts={}){
+  const res = await fetch(url, {...opts, headers:{...(opts.headers||{}), Authorization:'Bearer '+syncToken}});
+  if(res.status===401 || res.status===403){
+    try{ localStorage.removeItem('malcha_gtoken'); }catch(e){}
+    syncToken = null;
+    const err = new Error('auth'); err.auth = true; throw err;
+  }
+  if(!res.ok){ const err = new Error('drive '+res.status); err.status = res.status; throw err; }
+  return res;
+}
+async function driveFind(){
+  const q = encodeURIComponent(`name='${SYNC_FILE}'`);
+  const r = await gfetch(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,modifiedTime)&q=${q}`);
+  return ((await r.json()).files || [])[0] || null;
+}
+async function driveDownload(id){
+  const r = await gfetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`);
+  return r.json();
+}
+async function driveUpload(id, data){
+  const body = JSON.stringify(data);
+  if(id){
+    await gfetch(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body});
+    return id;
+  }
+  const bd = 'malcha' + Date.now().toString(36);
+  const meta = {name:SYNC_FILE, parents:['appDataFolder'], mimeType:'application/json'};
+  const multipart = `--${bd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${bd}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${bd}--`;
+  const r = await gfetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {method:'POST', headers:{'Content-Type':'multipart/related; boundary='+bd}, body:multipart});
+  return (await r.json()).id;
+}
+
+// 답장·교정 중에는 동기화를 미룸 (진행 중인 대화가 바뀌지 않게)
+function syncBusy(){
+  if(busy) return true;
+  return sessions.some(s=>s.messages.some(m=>m.review && m.review.status==='pending'));
+}
+async function syncNow(interactive){
+  if(syncing) return;
+  if(!syncClientId()){ if(interactive) alert('동기화 설정(클라이언트 ID)이 아직 없어요. ⚙ 설정의 ☁️ 동기화에서 넣어 주세요.'); return; }
+  if(syncBusy()){ scheduleAutoSync(5000); return; }
+  syncToken = syncToken || storedToken();
+  if(!syncToken){
+    if(!interactive){ setSyncStatus('need'); return; }
+    try{ syncToken = await requestToken(); }
+    catch(e){ setSyncStatus('error', e.message==='gsi' ? '구글 로그인 도구를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.' : '구글 연결이 취소됐거나 실패했어요.'); return; }
+  }
+  syncing = true; setSyncStatus('busy');
+  try{
+    await flushSave();
+    const st = settings.sync || {};
+    let fileId = st.fileId || null, remote = null;
+    if(fileId){
+      try{ remote = await driveDownload(fileId); }
+      catch(e){ if(e.status===404){ fileId = null; } else throw e; }
+    }
+    if(!fileId){
+      const f = await driveFind();
+      if(f){ fileId = f.id; remote = await driveDownload(f.id); }
+    }
+    const local = {sessions, characters, personas, vocab, lorebook, reports};
+    const merged = {};
+    const hasRemote = remote && remote.app==='malcha-sync';
+    for(const k of SYNC_KEYS)
+      merged[k] = hasRemote ? mergeCollection(k, local[k]||[], remote[k]||[], st.base ? st.base[k] : null) : (local[k]||[]);
+    sessions = merged.sessions.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    characters = merged.characters; personas = merged.personas; vocab = merged.vocab; lorebook = merged.lorebook; reports = merged.reports;
+    if(!getSession()) activeId = sessions[0]?.id || null;
+    const id = await driveUpload(fileId, {app:'malcha-sync', version:1, updatedAt:Date.now(), ...merged});
+    const base = {};
+    for(const k of SYNC_KEYS){ base[k] = {}; for(const it of merged[k]) if(it && it.id) base[k][it.id] = itemHash(it); }
+    settings.sync = {connected:true, fileId:id, base, last:Date.now()};
+    await flushSave();
+    renderSidebar(); renderChat();
+    setSyncStatus('ok');
+  }catch(e){
+    if(e.auth){ setSyncStatus('need'); if(interactive){ syncing = false; return syncNow(true); } }
+    else setSyncStatus('error', !navigator.onLine ? '인터넷이 끊겨 있어요. 연결되면 다시 동기화할게요.' : '동기화에 실패했어요. 잠시 후 다시 시도해 주세요.');
+  }finally{ syncing = false; }
+}
+function scheduleAutoSync(ms=15000){
+  if(syncing || !settings.sync || !settings.sync.connected) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(()=>{ syncTimer = null; if(storedToken() || syncToken) syncNow(false); else setSyncStatus('need'); }, ms);
+}
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='hidden' && syncTimer){ clearTimeout(syncTimer); syncTimer = null; syncNow(false); }
+  if(document.visibilityState==='visible' && settings.sync && settings.sync.connected) scheduleAutoSync(1500);
+});
+function disconnectSync(){
+  if(!confirm('이 기기의 동기화를 끊을까요?\n\n드라이브에 저장된 데이터와 이 기기의 데이터는 그대로 남아요. 나중에 다시 연결하면 합쳐져요.')) return;
+  const t = syncToken || storedToken();
+  try{ if(t && window.google && google.accounts) google.accounts.oauth2.revoke(t, ()=>{}); }catch(e){}
+  try{ localStorage.removeItem('malcha_gtoken'); }catch(e){}
+  syncToken = null; settings.sync = null; save();
+  setSyncStatus('idle'); renderSyncBox();
+}
+const agoText = t => { const s = Math.round((Date.now()-t)/1000); return s<60 ? '방금' : s<3600 ? `${Math.floor(s/60)}분 전` : s<86400 ? `${Math.floor(s/3600)}시간 전` : `${Math.floor(s/86400)}일 전`; };
+function setSyncStatus(kind, msg=''){ syncStatus = {kind, msg}; renderSyncSide(); renderSyncBox(); }
+function renderSyncSide(){
+  const b = $('btnSyncSide'); if(!b) return;
+  const on = settings.sync && settings.sync.connected;
+  b.style.display = on ? '' : 'none';
+  if(!on) return;
+  const k = syncStatus.kind;
+  b.querySelector('span').textContent =
+    k==='busy' ? '동기화 중…' : k==='need' ? '눌러서 동기화' : k==='error' ? '동기화 실패 · 다시' :
+    settings.sync.last ? `${agoText(settings.sync.last)} 동기화됨` : '눌러서 동기화';
+  b.classList.toggle('warn', k==='need' || k==='error');
+}
+function renderSyncBox(){
+  const box = $('syncBox'); if(!box) return;
+  const on = settings.sync && settings.sync.connected, k = syncStatus.kind;
+  const statusText = !syncClientId() ? '아직 설정되지 않았어요.'
+    : !on ? '이 기기는 연결되어 있지 않아요.'
+    : k==='busy' ? '동기화 중…' : k==='error' ? '⚠️ '+syncStatus.msg : k==='need' ? '로그인이 만료됐어요. 아래 버튼을 눌러 주세요.'
+    : `✓ 연결됨 · 마지막 동기화 ${settings.sync.last ? agoText(settings.sync.last) : '없음'}`;
+  box.innerHTML = `<div class="memo-hint" style="margin:0 0 8px">${esc(statusText)}</div>`
+    + (on
+      ? `<div class="inline-row"><button type="button" class="btn-mini" onclick="syncNow(true)">🔄 지금 동기화</button><button type="button" class="btn-mini" onclick="disconnectSync()">연결 끊기</button></div>`
+      : `<button type="button" class="btn-mini" onclick="syncNow(true)" ${syncClientId()?'':'disabled'}>☁️ 구글로 연결</button>`);
+}
+
 /* ---------- misc UI ---------- */
 function toggleSidebar(force){
   const sb=$('sidebar');
@@ -3795,6 +4015,11 @@ try{ const f = JSON.parse(localStorage.getItem('malcha_font')||'null'); if(f) ap
   applyTheme(settings.theme || 'matcha');
   applyFont(settings.font || 'system', settings.fontSize || 1);
   renderSidebar(); renderChat();
+  renderSyncSide();
+  if(settings.sync && settings.sync.connected){
+    loadGsi().catch(()=>{});
+    if(storedToken()) syncNow(false); else setSyncStatus('need');
+  }
   try{ await fetchModels(); $('connDot').className='conn-dot ok'; }catch(e){ $('connDot').className='conn-dot bad'; }
 })();
 </script>
