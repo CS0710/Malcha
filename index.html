@@ -2828,10 +2828,20 @@ const LORE_MD_TEMPLATE = `# 로어북 형식 안내
 # - 키워드: 콤마로 구분해서 적으세요. 이 중 하나라도 대화에 등장하면 발동합니다.
 # - 항상: true 로 적으면 키워드 없이 매 턴 항상 포함됩니다 (핵심 설정용, 적게 쓰는 걸 추천).
 # - 두 줄 다 생략 가능하지만, "항상: true"가 아니면 키워드가 최소 1개는 있어야 발동합니다.
-# - 캐릭터: 이름 을 적으면 그 캐릭터와의 대화에서만 발동합니다 (생략하면 모든 대화 공통). 캐릭터는 미리 만들어 두세요.
+# - 캐릭터: 이름 을 적으면 그 캐릭터와의 대화에서만 발동합니다 (생략하면 모든 대화 공통). 없는 캐릭터면 새로 만들지 물어봐요.
+# - 제목을 "# [캐릭터] 이름"으로 쓰면 로어 항목이 아니라 캐릭터 카드가 돼요. 불러오면 그 캐릭터가 만들어지거나(없을 때) 갱신돼요.
+#   카드에 쓸 수 있는 줄: 성격 키워드: / 배경: / 습관: / 가치관: / 목소리: 남자·여자·자동  (줄바꿈해서 여러 줄로 써도 돼요)
 # 이 안내 블록(# 로 시작하는 줄들)은 무시되니 지우지 않아도 됩니다. 아래 예시를 참고해서 이어서 작성하세요.
 
+# [캐릭터] Emma
+성격 키워드: 밝음, 수다스러움, 커피 덕후
+배경: 시애틀 출신 27살 카페 사장. 대학에서 미술을 전공했다.
+습관: 말끝에 "you know?"를 자주 붙인다.
+가치관: 솔직함이 최고라고 믿는다.
+목소리: 여자
+
 # 벚꽃마을의 축제
+캐릭터: Emma
 키워드: festival, 축제, cherry blossom, hanami
 매년 4월 첫 주에 마을 광장에서 열리는 벚꽃 축제. Emma는 3년 연속 푸드부스를 운영했고, 작년엔 비가 와서 망했던 기억이 있다.
 
@@ -2851,9 +2861,24 @@ function downloadLoreTemplate(){
 function parseLoreMd(text){
   // 안내 주석 블록(# 로 시작하는 줄이 실제 항목 제목 전에 연속으로 나오는 부분)은 건너뛰고 항목만 추출
   const lines = text.replace(/\r\n/g,'\n').split('\n');
-  const entries = [];
-  let cur = null;
+  const entries = [], cards = [];
+  let cur = null, card = null, field = null;
+  const CARD_FIELDS = [
+    [/^(성격\s*키워드|성격|키워드|personality|keywords?)$/i, 'keywords'],
+    [/^(배경(\s*설정)?|background)$/i, 'background'],
+    [/^(습관(\s*[·・/]\s*말버릇)?|말버릇|habits?|speech)$/i, 'habits'],
+    [/^(가치관(\s*[·・/]\s*신념)?|신념|values?)$/i, 'values'],
+    [/^(목소리|voice)$/i, 'voice'],
+  ];
+  const flushCard = ()=>{
+    if(card && card.name){
+      for(const k of ['keywords','background','habits','values','voice']) card[k] = (card[k]||'').trim();
+      cards.push(card);
+    }
+    card = null; field = null;
+  };
   const flush = ()=>{
+    flushCard();
     if(cur && cur.title && cur.contentLines.join('\n').trim()){
       entries.push({
         title: cur.title,
@@ -2868,8 +2893,18 @@ function parseLoreMd(text){
     const line = raw;
     const h = line.match(/^#{1,3}\s+(.+)$/);
     if(h){
-      flush();
+      flush(); cur = null;
+      const cm = h[1].trim().match(/^\[(캐릭터|character)\]\s*(.+)$/i);
+      if(cm){ card = {name: cm[2].trim()}; continue; }
       cur = {title: h[1].trim(), keywords:'', always:false, charName:'', contentLines:[]};
+      continue;
+    }
+    if(card){
+      // 캐릭터 카드: "항목: 내용" 줄로 시작하고, 이어지는 줄은 같은 항목에 붙임
+      const fm = line.match(/^\s*([^:：]{1,20})\s*[:：]\s*(.*)$/);
+      const key = fm && CARD_FIELDS.find(([re])=>re.test(fm[1].trim()));
+      if(key){ field = key[1]; card[field] = fm[2]; continue; }
+      if(field) card[field] = (card[field] ? card[field]+'\n' : '') + line;
       continue;
     }
     if(!cur) continue;   // 첫 제목 전의 안내/잡문은 무시
@@ -2882,7 +2917,7 @@ function parseLoreMd(text){
     cur.contentLines.push(line);
   }
   flush();
-  return entries;
+  return Object.assign(entries, {cards});
 }
 
 $('loreMdInput').addEventListener('change', async e=>{
@@ -2892,7 +2927,36 @@ $('loreMdInput').addEventListener('change', async e=>{
   try{
     const text = await file.text();
     const entries = parseLoreMd(text);
-    if(!entries.length){ alert('파일에서 로어 항목을 찾지 못했어요. "📄 형식 받기"로 예시 파일을 받아 형식을 확인해 주세요.'); return; }
+    const cards = entries.cards || [];
+    if(!entries.length && !cards.length){ alert('파일에서 로어 항목을 찾지 못했어요. "📄 형식 받기"로 예시 파일을 받아 형식을 확인해 주세요.'); return; }
+    const findChar = name => characters.find(x=>x.name.trim().toLowerCase()===name.trim().toLowerCase());
+    // 1) 캐릭터 카드 → 캐릭터 만들기/갱신
+    const madeChars = [], updatedChars = [];
+    for(const cd of cards){
+      const voice = /남|male|man/i.test(cd.voice) && !/여|female|woman/i.test(cd.voice) ? 'male' : /여|female|woman/i.test(cd.voice) ? 'female' : /자동|auto/i.test(cd.voice) ? '' : null;
+      const data = {};
+      for(const k of ['keywords','background','habits','values']) if(cd[k]) data[k] = cd[k];
+      if(voice!==null){ data.voiceGender = voice; data.voiceName = ''; data.voicePitch = null; }
+      let c = findChar(cd.name);
+      if(c){ Object.assign(c, data); updatedChars.push(c.name); }
+      else{
+        c = {id:'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name:cd.name, keywords:'', background:'', habits:'', values:'', photo:null, ...data};
+        characters.push(c); madeChars.push(c.name);
+      }
+      for(const ss of sessions) if(ss.charId===c.id)
+        ss.charProfile = {name:c.name, keywords:c.keywords, background:c.background, habits:c.habits, values:c.values};
+    }
+    // 2) 항목이 가리키는데 아직 없는 캐릭터 → 새로 만들지 물어봄
+    const unknown = [...new Set(entries.map(en=>en.charName).filter(n=>n && !findChar(n)))];
+    for(const name of unknown){
+      if(confirm(`캐릭터 '${name}'가 아직 없어요. 새로 만들까요?
+
+만들면 이 파일의 '${name}' 항목들이 ${name}와의 대화에서만 쓰여요. 성격·배경은 나중에 👤 캐릭터 관리에서 채울 수 있어요.
+(취소하면 모든 대화 공통 항목으로 넣어요)`)){
+        characters.push({id:'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), name, keywords:'', background:'', habits:'', values:'', photo:null});
+        madeChars.push(name);
+      }
+    }
     let added = 0, updated = 0;
     const missingChars = new Set();
     for(const en of entries){
@@ -2908,9 +2972,12 @@ $('loreMdInput').addEventListener('change', async e=>{
       if(existing){ Object.assign(existing, data); updated++; }
       else { lorebook.push({id:'l'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), ...data}); added++; }
     }
-    save(); showLoreList();
+    save(); showLoreList(); renderSidebar();
     alert(`불러오기 완료! 새 항목 ${added}개, 갱신 ${updated}개${entries.length>added+updated ? `\n(발동 조건이 없어 건너뛴 항목 ${entries.length-added-updated}개)`:''}`
-      + (missingChars.size ? `\n\n⚠️ 캐릭터 '${[...missingChars].join(', ')}'를 찾지 못해 해당 항목은 모든 대화 공통으로 넣었어요. 캐릭터를 먼저 만든 뒤 다시 불러오면 그 캐릭터 전용으로 바뀌어요.` : ''));
+      + (madeChars.length ? `\n\n👤 새로 만든 캐릭터: ${madeChars.join(', ')}` : '')
+      + (updatedChars.length ? `\n👤 정보를 갱신한 캐릭터: ${updatedChars.join(', ')}` : '')
+      + (madeChars.length ? `\n사진은 👤 캐릭터 관리에서 넣을 수 있어요.` : '')
+      + (missingChars.size ? `\n\n⚠️ 캐릭터 '${[...missingChars].join(', ')}' 항목은 모든 대화 공통으로 넣었어요. 캐릭터를 만든 뒤 다시 불러오면 그 캐릭터 전용으로 바뀌어요.` : ''));
   }catch(err){
     alert('파일을 읽지 못했어요. .md 또는 텍스트 파일인지 확인해 주세요.');
   }
