@@ -331,6 +331,7 @@
   .cast-meta{flex:1;min-width:0;font-size:13px;line-height:1.4}
   .cast-meta span{display:block;color:var(--sub);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   #castOverlay{z-index:120}
+  .tools .tool-btn[title]{min-width:26px}
   .rv-grade{display:flex;gap:6px;width:100%}
   .rv-grade button{flex:1;padding:10px 4px;white-space:nowrap}
   .rv-speak{margin-top:10px;font-size:12px}
@@ -514,6 +515,31 @@
 </div>
 
 <!-- New chat modal -->
+<div class="overlay" id="msgEditOverlay">
+  <div class="modal" style="max-width:520px">
+    <h2 id="meTitle">메시지 수정</h2>
+    <div id="meEditBox" class="field">
+      <textarea id="meText" style="min-height:140px"></textarea>
+      <div class="memo-hint" id="meHint"></div>
+    </div>
+    <div id="meRedoBox" class="field">
+      <div class="memo-hint" style="margin:0 0 8px">지금 답장은 지우고 새로 받아요. 원하는 방향이 있으면 골라 주세요. (비워 두면 그냥 다르게)</div>
+      <div class="cast-chips" style="margin-bottom:8px">
+        <button type="button" class="cast-chip" style="padding:6px 11px" onclick="redoChip('stay more in character')">캐릭터답게</button>
+        <button type="button" class="cast-chip" style="padding:6px 11px" onclick="redoChip('shorter, like a real text message')">더 짧게</button>
+        <button type="button" class="cast-chip" style="padding:6px 11px" onclick="redoChip('more natural and casual')">더 자연스럽게</button>
+        <button type="button" class="cast-chip" style="padding:6px 11px" onclick="redoChip('simpler English for my level')">더 쉬운 영어로</button>
+        <button type="button" class="cast-chip" style="padding:6px 11px" onclick="redoChip('take the story in a different direction')">다른 방향으로</button>
+      </div>
+      <input type="text" id="meNote" placeholder="직접 적어도 돼요 (예: Jake는 이런 말 안 해, 더 장난스럽게)">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeMsgEdit()">취소</button>
+      <button class="btn-primary" id="meSave" onclick="saveMsgEdit()">저장</button>
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="castOverlay">
   <div class="modal" style="max-width:560px">
     <h2>🎭 조연</h2>
@@ -888,7 +914,7 @@
     </div>
     </div>
     <div class="field"><label class="toggle-line" style="font-size:13px;color:var(--ink)"><input type="checkbox" id="setLight"> 🍃 가벼운 모드 (답장만 받기)</label>
-      <div class="memo-hint">자동 교정·단어 수집·미션 자동 판정을 끄고 답장만 받아요. 느린 컴퓨터에서 로컬 모델을 쓸 때 추천해요. 교정은 내 메시지 아래 <b>✏️ 교정받기</b> 버튼으로 필요할 때만 받을 수 있어요.</div>
+      <div class="memo-hint">자동 교정·단어 수집·미션 자동 판정을 끄고 답장만 받아요. 느린 컴퓨터에서 로컬 모델을 쓸 때 추천해요. 교정은 내 메시지 아래 <b>📝 교정받기</b> 버튼으로 필요할 때만 받을 수 있어요.</div>
     </div>
     <div class="field"><label>💾 저장 공간</label>
       <div class="store-bar"><i id="storeBarFill"></i></div>
@@ -1254,7 +1280,7 @@ RULES:
 - Per reply: 0–2 narration lines and 1–4 dialogue sentences. Keep it chat-like, not essay-like.
 - Drive the conversation naturally: react, ask questions, create small events in the scene.
 - Never break character, never explain grammar, never use Korean unless the learner explicitly asks for help.
-- The learner's latest message may start with [WORLD INFO], [REVIEW WORDS] or [CAMEO] blocks written for you only. Follow CAMEO notes.${settings.pexelsKey ? `
+- The learner's latest message may start with [WORLD INFO], [REVIEW WORDS], [CAMEO] or [REDO] blocks written for you only. Follow CAMEO and REDO notes.${settings.pexelsKey ? `
 - PHOTOS: only when your character actually sends a photo in the story (or the learner asks for one), add it on its own line as [PHOTO: 2–5 English keywords for a stock-photo search, e.g. snowy window night street]. Describe scenes or objects, never a specific person's face. At most one per reply, and don't overuse it.` : ''} Treat WORLD INFO as established background facts; follow REVIEW WORDS only when natural. Never mention or quote these blocks.
 
 SCENARIO: ${s.scenario}${s.detail ? `\nSCENARIO DETAILS: ${s.detail}` : ''}
@@ -1267,7 +1293,7 @@ function chatPayloadMessages(s){
   const msgs = [{role:'system', content:systemPrompt(s)}];
   for(const m of s.messages) if(!m.archived) msgs.push({role:m.role, content:m.content});
   // 로어는 저장된 대화에는 넣지 않고, 이번에 보낼 마지막 학습자 메시지 앞에만 붙임
-  const lore = loreBlock(s) + reviewWordsBlock(s) + cameoBlock(s);
+  const lore = loreBlock(s) + reviewWordsBlock(s) + cameoBlock(s) + redoBlock(s);
   if(lore){
     for(let i=msgs.length-1; i>0; i--){
       if(msgs[i].role==='user'){ msgs[i] = {role:'user', content: lore + msgs[i].content}; break; }
@@ -1511,7 +1537,9 @@ function messageNode(m, idx, s){
     const btn=document.createElement('button'); btn.className='tool-btn';
     btn.textContent = '📖 해석';
     btn.onclick=()=>explainMessage(idx, btn);
-    tools.appendChild(btn); wrap.appendChild(tools);
+    tools.appendChild(btn);
+    tools.appendChild(msgTools(m, idx, s));
+    wrap.appendChild(tools);
   }else{
     const row=document.createElement('div'); row.className='row me';
     const photo = myPhoto(s);
@@ -1519,13 +1547,17 @@ function messageNode(m, idx, s){
     const col=document.createElement('div'); col.className='bubble-col';
     const bub=document.createElement('div'); bub.className='bubble'; bub.textContent=m.content;
     col.appendChild(bub); row.appendChild(col); wrap.appendChild(row);
-    if(!m.review || m.review.status==='error'){
+    {
       const tools=document.createElement('div'); tools.className='tools';
       tools.style.justifyContent='flex-end';
       if(photo) tools.style.marginRight='41px';
-      const rb=document.createElement('button'); rb.className='tool-btn'; rb.textContent='✏️ 교정받기';
-      rb.onclick=()=>reviewOne(idx);
-      tools.appendChild(rb); wrap.appendChild(tools);
+      if(!m.review || m.review.status==='error'){
+        const rb=document.createElement('button'); rb.className='tool-btn'; rb.textContent='📝 교정받기';
+        rb.onclick=()=>reviewOne(idx);
+        tools.appendChild(rb);
+      }
+      tools.appendChild(msgTools(m, idx, s));
+      wrap.appendChild(tools);
     }
   }
   return wrap;
@@ -1555,7 +1587,10 @@ async function sendMessage(){
   s.messages.push(msg);
   save(); renderChat(); renderReview();
   await requestReply(s);
-  // 캐릭터 답장 후 백그라운드 작업
+  afterReply(s, msg);
+}
+// 캐릭터 답장 후 백그라운드 작업 (보낼 때, 내 메시지를 고쳐 답장을 다시 받을 때)
+function afterReply(s, msg){
   const lastA = [...s.messages].reverse().find(m=>m.role==='assistant');
   if(settings.lightMode){
     // 가벼운 모드: 답장만. 긴 대화 기억 요약만 유지 (입력이 짧아져 오히려 빨라짐)
@@ -1623,7 +1658,7 @@ Do these tasks and return {${['"review"', wantVocab?'"vocab"':'', wantMission?'"
       if(wantVocab) await collectVocab(s, replyText);
       if(wantMission) await judgeMission(s);
     }else{
-      msg.review = {status:'error', note: (lastApiError && lastApiError.status===429) ? '요청 한도에 걸려 교정을 못 했어요. 잠시 후 메시지 아래 ✏️ 교정받기를 눌러 주세요.' : '교정 요청에 실패했어요. 잠시 후 메시지 아래 ✏️ 교정받기를 눌러 다시 받을 수 있어요.'};
+      msg.review = {status:'error', note: (lastApiError && lastApiError.status===429) ? '요청 한도에 걸려 교정을 못 했어요. 잠시 후 메시지 아래 📝 교정받기를 눌러 주세요.' : '교정 요청에 실패했어요. 잠시 후 메시지 아래 📝 교정받기를 눌러 다시 받을 수 있어요.'};
       save(); renderReview();
     }
   }
@@ -1800,7 +1835,7 @@ At most 3 errors, most important first. "errors" must be empty unless status is 
     const clean = full.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
     msg.review = parseReview(clean, msg.content);
   }catch(e){
-    msg.review = {status:'error', note:'교정 요청에 실패했어요. 잠시 후 메시지 아래 ✏️ 교정받기를 눌러 다시 받을 수 있어요.'};
+    msg.review = {status:'error', note:'교정 요청에 실패했어요. 잠시 후 메시지 아래 📝 교정받기를 눌러 다시 받을 수 있어요.'};
   }
   save(); renderReview();
 }
@@ -3479,6 +3514,86 @@ function sectionStatsMd(part){
 ` + (top ? `- 자주 한 실수: ${top}
 ` : '') + `
 `;
+}
+
+/* =====================================================================
+   ✏️ 메시지 수정 · 🗑 삭제 · 🔄 다시 받기
+   ===================================================================== */
+let msgEdit = null;   // {idx, mode:'edit'|'redo'}
+function msgTools(m, idx, s){
+  const frag = document.createDocumentFragment();
+  const add = (label, title, fn)=>{ const b=document.createElement('button'); b.className='tool-btn'; b.textContent=label; b.title=title; b.onclick=fn; frag.appendChild(b); };
+  const lastVisible = (()=>{ for(let i=s.messages.length-1;i>=0;i--) if(!s.messages[i].hidden) return i; return -1; })();
+  if(m.role==='assistant' && idx===lastVisible) add('🔄', '이 답장 다시 받기', ()=>openMsgEdit(idx, 'redo'));
+  add('✏️', '수정', ()=>openMsgEdit(idx, 'edit'));
+  add('🗑', '삭제', ()=>deleteMsg(idx));
+  return frag;
+}
+function openMsgEdit(idx, mode){
+  const s = getSession(); if(!s || busy) return;
+  const m = s.messages[idx]; if(!m) return;
+  msgEdit = {idx, mode};
+  $('meTitle').textContent = mode==='redo' ? '🔄 답장 다시 받기' : (m.role==='assistant' ? '✏️ 상대 답장 수정' : '✏️ 내 메시지 수정');
+  $('meEditBox').style.display = mode==='edit' ? '' : 'none';
+  $('meRedoBox').style.display = mode==='redo' ? '' : 'none';
+  $('meHint').innerHTML = m.role==='assistant'
+    ? '나레이션은 <b>*별표*</b>로 감싸 한 줄에 써요. 조연 대사는 <b>이름: 대사</b> 형식이에요.'
+    : '고친 문장은 다시 교정받을 수 있어요.';
+  $('meText').value = m.content;
+  $('meNote').value = '';
+  $('meSave').textContent = mode==='redo' ? '다시 받기' : '저장';
+  $('msgEditOverlay').classList.add('show');
+  if(mode==='edit') setTimeout(()=>$('meText').focus(), 50);
+}
+function closeMsgEdit(){ $('msgEditOverlay').classList.remove('show'); msgEdit = null; }
+function redoChip(t){ const n = $('meNote'); n.value = n.value ? n.value + ', ' + t : t; }
+async function saveMsgEdit(){
+  const s = getSession(); if(!s || !msgEdit) return;
+  const {idx, mode} = msgEdit; const m = s.messages[idx]; if(!m) return closeMsgEdit();
+  if(mode==='redo'){
+    const note = $('meNote').value.trim();
+    closeMsgEdit();
+    s.redo = {old: m.content, note};
+    s.messages.splice(idx, 1);
+    save(); renderChat();
+    await requestReply(s);
+    delete s.redo; save();
+    return;
+  }
+  const text = $('meText').value.trim();
+  if(!text){ $('meText').focus(); return; }
+  closeMsgEdit();
+  if(text === m.content) return;
+  m.content = text; m.edited = true;
+  if(m.role==='assistant'){ delete m.note; delete m.photos; }
+  else{ delete m.review; }
+  save(); renderChat();
+  // 내 마지막 메시지를 고쳤고 그 뒤에 답장이 있으면 → 답장도 다시 받을지
+  if(m.role==='user'){
+    const after = s.messages.slice(idx+1).filter(x=>!x.hidden);
+    const isLastUser = !s.messages.slice(idx+1).some(x=>x.role==='user' && !x.hidden);
+    if(isLastUser && after.length && after.every(x=>x.role==='assistant')
+       && confirm('고친 메시지로 답장도 다시 받을까요?\n(지금 답장은 지워져요)')){
+      s.messages.splice(idx+1);
+      if(!settings.lightMode) m.review = {status:'pending'};
+      save(); renderChat();
+      await requestReply(s);
+      afterReply(s, m);
+    }
+  }
+}
+function deleteMsg(idx){
+  const s = getSession(); if(!s || busy) return;
+  const m = s.messages[idx]; if(!m) return;
+  if(!confirm(m.role==='assistant' ? '이 답장을 지울까요?' : '이 메시지를 지울까요?\n(이 문장의 교정 결과와 실수 기록도 함께 지워져요)')) return;
+  s.messages.splice(idx, 1);
+  save(); renderChat(); renderSidebar();
+}
+// 마지막 답장을 다시 받을 때 모델에게 주는 안내
+function redoBlock(s){
+  if(!s.redo) return '';
+  const old = plainMsg(s.redo.old).slice(0, 600);
+  return `[REDO — the learner rejected your previous reply${old ? `: <<<${old}>>>` : ''}. ${s.redo.note ? `Their request: ${s.redo.note}.` : 'Write a clearly different reply.'} Stay true to your character profile and the story so far. Do not mention this note.]\n\n`;
 }
 
 /* =====================================================================
