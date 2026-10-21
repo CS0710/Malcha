@@ -119,6 +119,9 @@
 
   /* narration — the novel interlude */
   .narration{font-family:var(--serif);font-style:italic;color:var(--narr);text-align:center;font-size:calc(14px * var(--fs));line-height:1.7;max-width:520px;margin:16px auto 6px;padding:0 12px}
+  .narration.tap{cursor:pointer}
+  .narr-ko{font-family:var(--sans);font-style:normal;font-size:calc(12.5px * var(--fs));color:var(--chat-sub);margin-top:3px;line-height:1.6}
+  .bubble .act{font-style:italic;opacity:.82}
   .narration::before{content:"✦";font-style:normal;font-size:9px;display:block;margin-bottom:6px;opacity:.55;letter-spacing:4px}
 
   .tools{display:flex;gap:6px;margin-top:2px}
@@ -532,7 +535,8 @@
         <div class="input-row">
           <button class="btn-hint" id="btnHint" title="뭐라고 답할지 힌트 받기" onclick="hintOrTranslate()">💡</button>
           <button class="btn-mic" id="btnMic" title="말로 입력하기 (대화 언어로 받아써요)" onclick="toggleMic()" style="display:none">🎤</button>
-          <textarea id="input" rows="1" placeholder="메시지 입력 (한글 OK)"></textarea>
+          <button class="btn-hint" id="btnEvent" title="상대가 먼저 이야기를 이어가게 하기 (사건 만들기)" onclick="nudgeStory()">🎲</button>
+          <textarea id="input" rows="1" placeholder="메시지 (한글 OK)"></textarea>
           <button class="btn-send" id="btnSend" onclick="sendMessage()">전송</button>
         </div>
       </div>
@@ -593,6 +597,10 @@
       <select id="scPersona"></select>
       <input type="text" id="scPersonaNote" style="margin-top:6px" placeholder="이 대화에서만: 지금 내 상황 (예: 북디자이너로 이직함, 오늘 야근함)">
       <div class="memo-hint">아래 칸은 이 대화에만 적용돼요. 페르소나 자체는 바뀌지 않아요.</div>
+    </div>
+    <div class="field"><label>📖 이야기 전개</label>
+      <div class="seg" id="scPaceSeg"><button type="button" data-v="calm">차분하게</button><button type="button" data-v="normal">보통</button><button type="button" data-v="active">적극적으로</button></div>
+      <div class="memo-hint">적극적일수록 상대가 대화를 이끌고 사건을 자주 만들어요. 입력창 옆 🎲를 누르면 언제든 바로 이야기를 이어가게 할 수 있어요.</div>
     </div>
     <div class="field"><label>🎯 미션</label><input type="text" id="scMission" placeholder="비워 두면 미션 없음 (바꾸면 성공 여부가 초기화돼요)"></div>
     <div class="field"><label>🎭 조연</label>
@@ -1359,9 +1367,10 @@ RULES:
 - Interleave short narration describing the scene, actions, or your character's inner feelings. Narration must also be in ${L.native}.
 - FORMAT: put every narration on its own line wrapped in single asterisks, e.g. *She smiles and wipes the counter.* Dialogue lines are plain text with no quotes and no name prefixes.
 - Per reply: 0–2 narration lines and 1–4 dialogue sentences. Keep it chat-like, not essay-like.
-- Drive the conversation naturally: react, ask questions, create small events in the scene.
+- ${PACE_RULE[s.pace||'normal'] || PACE_RULE.normal}
+- The learner may write their own character's actions in *asterisks*, sometimes in Korean (e.g. *커피를 한 모금 마신다*). Treat them as real actions in the scene and react naturally. Never decide the learner's actions, words, or feelings for them.
 - Never break character, never explain grammar, never use Korean unless the learner explicitly asks for help.
-- The learner's latest message may start with [WORLD INFO], [REVIEW WORDS], [CAMEO] or [REDO] blocks written for you only. Follow CAMEO and REDO notes.${settings.pexelsKey ? `
+- The learner's latest message may start with [WORLD INFO], [REVIEW WORDS], [CAMEO], [EVENT] or [REDO] blocks, or be a [CONTINUE] or [SCENE UPDATE] note, written for you only. Follow CAMEO, EVENT, CONTINUE and REDO notes.${settings.pexelsKey ? `
 - PHOTOS: only when your character actually sends a photo in the story (or the learner asks for one), add it on its own line as [PHOTO: 2–5 English keywords for a stock-photo search, e.g. snowy window night street]. Describe scenes or objects, never a specific person's face. At most one per reply, and don't overuse it.` : ''} Treat WORLD INFO as established background facts; follow REVIEW WORDS only when natural. Never mention or quote these blocks.
 
 SCENARIO: ${s.scenario}${s.detail ? `\nSCENARIO DETAILS: ${s.detail}` : ''}
@@ -1374,7 +1383,8 @@ function chatPayloadMessages(s){
   const msgs = [{role:'system', content:systemPrompt(s)}];
   for(const m of s.messages) if(!m.archived) msgs.push({role:m.role, content:m.content});
   // 로어는 저장된 대화에는 넣지 않고, 이번에 보낼 마지막 학습자 메시지 앞에만 붙임
-  const lore = loreBlock(s) + reviewWordsBlock(s) + cameoBlock(s) + redoBlock(s);
+  const cameo = cameoBlock(s);
+  const lore = loreBlock(s) + reviewWordsBlock(s) + cameo + (cameo ? '' : eventBlock(s)) + redoBlock(s);
   if(lore){
     for(let i=msgs.length-1; i>0; i--){
       if(msgs[i].role==='user'){ msgs[i] = {role:'user', content: lore + msgs[i].content}; break; }
@@ -1630,16 +1640,21 @@ function renderChat(){
   $('headSub').textContent = `${langOf(s.lang).name} · ${isOnline()?'☁️ '+(activeProfile().name||'API')+' · ':''}${apiModel()||'모델 미선택'}${settings.lightMode?' · 🍃':''}${(s.cast||[]).length ? ' · 🎭 '+castOf(s).map(m=>m.name).join(', ') : ''}`;
   $('headLevel').value = s.level;
   const inner = $('msgInner'); inner.innerHTML='';
-  s.messages.forEach((m,idx)=>{ if(!m.hidden) inner.appendChild(messageNode(m, idx, s)); else if(m.scene) inner.appendChild(sceneNode(m)); });
+  s.messages.forEach((m,idx)=>{ if(!m.hidden) inner.appendChild(messageNode(m, idx, s)); else if(m.scene) inner.appendChild(sceneNode(m)); else if(m.nudge) inner.appendChild(nudgeNode()); });
   scrollBottom();
 }
 
 function messageNode(m, idx, s){
   const wrap = document.createElement('div');
   if(m.role==='assistant'){
+    const nko = shownNarr.has(s.id+':'+idx) ? narrKoFor(m) : null; let ni = 0;
     for(const b of parseBlocks(m.content)){
       if(b.t==='n'){
-        const n=document.createElement('div'); n.className='narration'; n.textContent=b.c; wrap.appendChild(n);
+        const n=document.createElement('div'); n.className='narration tap'; n.textContent=b.c;
+        n.dataset.mi = idx; n.dataset.ni = ni; n.title = '눌러서 한국어 보기';
+        if(nko && nko[ni]){ const k=document.createElement('div'); k.className='narr-ko'; k.textContent=nko[ni]; n.appendChild(k); }
+        n.onclick = ()=>toggleNarr(idx); ni++;
+        wrap.appendChild(n);
       }else if(b.t==='p'){
         wrap.appendChild(photoCard(m, idx, b.c, s, false));
       }else{
@@ -1662,13 +1677,13 @@ function messageNode(m, idx, s){
     const photo = myPhoto(s);
     if(photo) row.innerHTML = `<div class="avatar"><img src="${photo}" alt=""></div>`;
     const col=document.createElement('div'); col.className='bubble-col';
-    const bub=document.createElement('div'); bub.className='bubble'; bub.textContent=m.content;
+    const bub=document.createElement('div'); bub.className='bubble'; bub.innerHTML=userBubbleHtml(m.content);
     col.appendChild(bub); row.appendChild(col); wrap.appendChild(row);
     {
       const tools=document.createElement('div'); tools.className='tools';
       tools.style.justifyContent='flex-end';
       if(photo) tools.style.marginRight='41px';
-      if(!m.review || m.review.status==='error'){
+      if((!m.review || m.review.status==='error') && learnerText(m.content)){
         const rb=document.createElement('button'); rb.className='tool-btn'; rb.textContent='📝 교정받기';
         rb.onclick=()=>reviewOne(idx);
         tools.appendChild(rb);
@@ -1700,7 +1715,7 @@ async function sendMessage(){
   if(!text) return;
   if(!apiModel()){ openSettings(); return; }
   ta.value=''; autoGrow(); updateHintBtn(); hideHint(); hideBanner();
-  const msg = settings.lightMode ? {role:'user', content:text, at:Date.now()} : {role:'user', content:text, at:Date.now(), review:{status:'pending'}};
+  const msg = (settings.lightMode || !learnerText(text)) ? {role:'user', content:text, at:Date.now()} : {role:'user', content:text, at:Date.now(), review:{status:'pending'}};
   s.messages.push(msg);
   save(); renderChat(); renderReview();
   await requestReply(s);
@@ -1709,8 +1724,8 @@ async function sendMessage(){
 // 캐릭터 답장 후 백그라운드 작업 (보낼 때, 내 메시지를 고쳐 답장을 다시 받을 때)
 function afterReply(s, msg){
   const lastA = [...s.messages].reverse().find(m=>m.role==='assistant');
-  if(settings.lightMode){
-    // 가벼운 모드: 답장만. 긴 대화 기억 요약만 유지 (입력이 짧아져 오히려 빨라짐)
+  if(settings.lightMode || !learnerText(msg.content)){
+    // 가벼운 모드(또는 한국어 *행동*만 쓴 메시지): 답장만. 긴 대화 기억 요약만 유지 (입력이 짧아져 오히려 빨라짐)
     maybeCompress(s);
   }else{
     // 교정·단어 수집·미션 판정을 요청 한 번으로 → 그다음 필요하면 기억 요약
@@ -1735,6 +1750,7 @@ async function analyzeTurn(s, msg, replyText){
   const known = wantVocab ? vocab.filter(v=>v.lang===s.lang).slice(-40).map(v=>v.term).join(', ') : '';
 
   const tasks = [`"review": judge ONLY the learner's newest message, in context.
+  Text inside *asterisks* is the learner describing their character's action: if it is in Korean, ignore it completely; if it is in ${L.native}, check it like the rest (short present-tense actions like *sips coffee* are fine).
   Casual-chat rules: short answers, fragments that answer the question, lowercase, missing final punctuation, contractions and normal texting style are NOT errors when a native would text the same way here.
   "error" = a genuine mistake a native would notice (tense, articles, prepositions, agreement, word choice, word order, spelling). Never invent errors.
   "tip" = no real errors, but a clearly more natural native phrasing exists. "ok" = natural as it is.
@@ -1881,7 +1897,7 @@ async function explainMessage(idx, btn){
   try{
     const full = await ollamaChat([
       {role:'system', content:`You are a ${L.native} tutor for Korean learners. Answer ONLY in Korean. Be concise.`},
-      {role:'user', content:`다음 ${L.native} 메시지를 한국어로 해설해줘. ① 전체 자연스러운 번역 ② 핵심 표현 2~4개의 의미·뉘앙스·활용 예. 불필요한 서론 없이 바로:\n\n"""${stripPhotoTags(m.content).replace(/\*[^*]*\*/g,' ')}"""`}
+      {role:'user', content:`다음 ${L.native} 메시지를 한국어로 해설해줘. *별표*로 감싼 줄은 장면 나레이션이야. ① 전체 자연스러운 번역 (나레이션도 순서대로 *별표*를 유지해 함께 번역) ② 핵심 표현 2~4개의 의미·뉘앙스·활용 예 (나레이션 속 표현도 좋아). 불필요한 서론 없이 바로:\n\n"""${stripPhotoTags(m.content)}"""`}
     ], ()=>{});
     m.note = full.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
     save();
@@ -1898,6 +1914,88 @@ function showInterp(idx){
     el.scrollIntoView({block:'nearest'});
     el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
   }
+}
+
+/* ---------- 이야기 주도: 전개 속도 · 사건 · 🎲 이어가기 ---------- */
+const PACE_RULE = {
+  calm: "PACE (relaxed): follow the learner's lead, react warmly, and ask a question now and then. Only rarely introduce new events.",
+  normal: "PACE: YOU lead the scene — the learner should never have to carry the conversation alone. In every reply, move things forward with at least one of: a new detail about yourself or the situation, an opinion, a suggestion or plan, a question that opens a new topic, or a small event in the scene. Don't just agree with or mirror the learner.",
+  active: "PACE (lively): YOU lead the scene — the learner should never have to carry the conversation alone. In every reply, move things forward with a new detail, opinion, plan, question, or event. Be bold: every few replies make something happen — an interruption, a surprise, a small problem to solve, a change of place, someone arriving — so the story keeps moving."
+};
+const EVENT_P = {calm:0, normal:0.12, active:0.3};
+function eventBlock(s){
+  const lastUser = [...s.messages].reverse().find(m=>m.role==='user');
+  if(!lastUser || lastUser.hidden) return '';
+  const p = EVENT_P[s.pace||'normal'] || 0, n = userTurnCount(s);
+  if(!p || n - (s.lastEventTurn ?? -99) < 4 || Math.random() >= p) return '';
+  s.lastEventTurn = n;
+  return `[EVENT — in this reply, make something new happen in the scene that fits the story and setting (an unexpected interruption, news, a small problem, a surprise, a change of plan…). React to it in character and leave the learner something easy to respond to.]\n\n`;
+}
+// 🎲: 내가 말하지 않아도 상대가 이야기를 이어가게
+async function nudgeStory(){
+  const s = getSession(); if(!s || busy) return;
+  if(!apiModel()){ openSettings(); return; }
+  hideHint(); hideBanner();
+  s.messages.push({role:'user', hidden:true, nudge:true,
+    content:'[CONTINUE — the learner is waiting for you to move things along. Without waiting for them, push the story forward yourself: create a small, natural event or development that fits the scene and the characters (supporting characters may appear), react to it in character, and leave the learner something easy to respond to. Do not mention this note.]'});
+  save(); renderChat();
+  await requestReply(s);
+  maybeCompress(s);
+}
+function nudgeNode(){
+  const d = document.createElement('div'); d.className = 'scene-mark';
+  d.innerHTML = '<span>🎲 상대가 이야기를 이어가요</span>';
+  return d;
+}
+
+/* ---------- 나레이션 번역: 나레이션을 누르면 한국어가 아래에 ---------- */
+const shownNarr = new Set(), loadingNarr = new Set();
+function narrLines(m){ return parseBlocks(m.content).filter(b=>b.t==='n').map(b=>b.c); }
+function narrKoFor(m){
+  const src = narrLines(m).join('\n');
+  return (m.narrKo && m.narrKo.src===src && Array.isArray(m.narrKo.ko)) ? m.narrKo.ko : null;
+}
+async function toggleNarr(idx){
+  const s = getSession(); if(!s) return;
+  const m = s.messages[idx]; if(!m) return;
+  const key = s.id+':'+idx;
+  if(shownNarr.has(key)){ shownNarr.delete(key); paintNarr(idx, m); return; }
+  shownNarr.add(key);
+  if(narrKoFor(m)){ paintNarr(idx, m); return; }
+  if(loadingNarr.has(key)) return;
+  if(!apiModel()){ openSettings(); return; }
+  loadingNarr.add(key); paintNarr(idx, m, true);
+  const lines = narrLines(m);
+  try{
+    const full = await ollamaChat([
+      {role:'system', content:'You translate roleplay narration into natural Korean. Output ONLY valid JSON.'},
+      {role:'user', content:`Translate each narration line into natural, easy-to-read Korean (keep the storytelling tone). Same order, same count.\n\n${lines.map((l,i)=>`${i+1}. ${l}`).join('\n')}\n\nReturn {"ko":["...", ...]}`}
+    ], ()=>{});
+    const j = extractJson(full.replace(/<think>[\s\S]*?(<\/think>|$)/,''));
+    const ko = j && Array.isArray(j.ko) ? j.ko.map(x=>String(x||'').trim()) : null;
+    if(ko && ko.length===lines.length){ m.narrKo = {src: lines.join('\n'), ko}; save(); }
+    else shownNarr.delete(key);
+  }catch(e){ shownNarr.delete(key); connFailHelp(); }
+  finally{ loadingNarr.delete(key); paintNarr(idx, m); }
+}
+// 화면 전체를 다시 그리지 않고(스크롤 유지) 해당 메시지의 나레이션만 갱신
+function paintNarr(idx, m, loading){
+  const s = getSession(); if(!s) return;
+  const on = shownNarr.has(s.id+':'+idx), ko = narrKoFor(m);
+  document.querySelectorAll(`.narration[data-mi="${idx}"]`).forEach(el=>{
+    let k = el.querySelector('.narr-ko');
+    const text = loading ? '번역 중…' : (on && ko ? ko[+el.dataset.ni] : '');
+    if(!text){ if(k) k.remove(); return; }
+    if(!k){ k = document.createElement('div'); k.className = 'narr-ko'; el.appendChild(k); }
+    k.textContent = text;
+  });
+}
+
+/* ---------- 내 행동: *별표* 안은 행동(한국어도 OK) ---------- */
+// 교정할 대상: 한국어로 쓴 *행동*은 빼고 남는 부분
+const learnerText = t => (t||'').replace(/\*[^*\n]+\*/g, seg => HANGUL_RE.test(seg) ? ' ' : seg).replace(/\s+/g,' ').trim();
+function userBubbleHtml(t){
+  return esc(t).replace(/\*([^*\n]+)\*/g, '<span class="act">*$1*</span>');
 }
 
 /* ---------- 💡 힌트 / 🔤 "영어로 뭐라고 해?" ---------- */
@@ -1976,7 +2074,7 @@ Give 3 ways to say it in ${L.native} that fit this moment and relationship:
 1) simple and easy (for a ${LEVEL_KO[s.level]||'중급'} learner),
 2) the most natural way a native speaker would say it here,
 3) a version with a different nuance or tone (more casual, polite, playful, or emotional — whichever fits).
-Keep the learner's meaning. Write each as the learner's own chat message: first person, no narration, no quotes.
+Keep the learner's meaning. Write each as the learner's own chat message: first person, no narration, no quotes. If the learner described an action in *asterisks*, keep it as a short action in *asterisks* in ${L.native} (e.g. *sips coffee*).
 Return JSON: {"options":[{"text":"${L.native} message","note":"한국어로 짧게: 어떤 느낌인지, 언제 쓰는지"}]}`}
     ], ()=>{});
     const j = extractJson(full.replace(/<think>[\s\S]*?(<\/think>|$)/,''));
@@ -2010,6 +2108,7 @@ Learner's newest message:
 <<<${msg.content}>>>
 
 Rules for casual chat:
+- Text inside *asterisks* is the learner describing their character's action: if it is in Korean, ignore it completely; if it is in ${L.native}, check it like the rest (short present-tense actions like *sips coffee* are fine).
 - Short answers, sentence fragments that answer the question, lowercase, missing final punctuation, contractions, and normal texting style are NOT errors when a native speaker would text the same way in this context.
 - "error" = a genuine mistake a native speaker would notice as wrong: tense, articles, prepositions, agreement, word choice, word order, spelling. Never invent errors.
 - "tip" = no real errors, but a clearly more natural native phrasing exists.
@@ -3061,10 +3160,14 @@ function openScene(){
   sel.value = (s.personaId && personas.some(p=>p.id===s.personaId)) ? s.personaId : '';
   $('scPersonaNote').value = s.personaNote||'';
   $('scMission').value = s.mission||'';
+  scPace = s.pace || 'normal'; paintPace();
   $('scNotify').checked = true;
   renderSceneCast();
   $('sceneOverlay').classList.add('show');
 }
+let scPace = 'normal';
+function paintPace(){ [...$('scPaceSeg').children].forEach(b=>b.classList.toggle('sel', b.dataset.v===scPace)); }
+$('scPaceSeg').addEventListener('click', e=>{ const b = e.target.closest('button'); if(!b) return; scPace = b.dataset.v; paintPace(); });
 function closeScene(){ $('sceneOverlay').classList.remove('show'); }
 function renderSceneCast(){
   const s = getSession(); if(!s) return;
@@ -3094,6 +3197,7 @@ async function saveScene(){
   s.scenario = scenario; s.detail = detail; s.character = character;
   s.personaId = pid; s.personaProfile = p ? {name:p.name, desc:p.desc} : null;
   if(personaNote) s.personaNote = personaNote; else delete s.personaNote;
+  if(scPace==='normal') delete s.pace; else s.pace = scPace;
   if(mission !== (s.mission||'')){ s.mission = mission; s.missionDone = false; s.missionComment = ''; }
 
   const notify = $('scNotify').checked && changes.length && s.messages.some(m=>!m.hidden);
@@ -3926,7 +4030,7 @@ async function saveMsgEdit(){
   closeMsgEdit();
   if(text === m.content) return;
   m.content = text; m.edited = true;
-  if(m.role==='assistant'){ delete m.note; delete m.photos; }
+  if(m.role==='assistant'){ delete m.note; delete m.photos; delete m.narrKo; }
   else{ delete m.review; }
   save(); renderChat();
   // 내 마지막 메시지를 고쳤고 그 뒤에 답장이 있으면 → 답장도 다시 받을지
