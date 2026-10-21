@@ -292,6 +292,20 @@
   .char-item .cbtns button{font-size:11.5px;font-weight:700;color:var(--sub);padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:#fff}
   .char-item .cbtns button:hover{background:#F0F2F2;color:var(--ink)}
   .char-item .cbtns .cdel:hover{color:var(--danger)}
+  .avatar[data-prof]{cursor:pointer}
+  .crop-ed{display:flex;gap:14px;align-items:center;margin-top:10px}
+  .crop-ed canvas{width:150px;height:150px;border-radius:50%;cursor:grab;touch-action:none;box-shadow:0 0 0 3px var(--accent-soft),0 0 0 4px var(--line);background:#F0EDE6}
+  .crop-ed canvas:active{cursor:grabbing}
+  .crop-side{flex:1;min-width:0}
+  .crop-side input[type=range]{width:100%}
+  .photo-preview canvas{width:100%;height:100%;display:block}
+  .prof-modal{max-width:380px;text-align:center}
+  .prof-photo{margin:0 auto 14px;max-width:100%}
+  .prof-photo img{display:block;margin:0 auto;max-width:100%;max-height:52vh;border-radius:16px;object-fit:contain}
+  .prof-photo.none{width:120px;height:120px;border-radius:50%;background:#F0EDE6;display:flex;align-items:center;justify-content:center;font-size:54px;font-weight:800;color:#3B4A5A}
+  .prof-role{display:inline-block;font-size:11.5px;font-weight:700;color:var(--accent-dk);background:var(--accent-soft);border-radius:999px;padding:2px 10px;margin-bottom:6px}
+  .prof-intro{font-size:13.5px;line-height:1.65;color:var(--ink);white-space:pre-wrap}
+  .prof-note{font-size:12.5px;color:var(--sub);margin-top:8px}
   .photo-row{display:flex;align-items:center;gap:12px}
   .photo-preview{width:72px;height:72px;min-width:72px;border-radius:50%;background:#F0EDE6;display:flex;align-items:center;justify-content:center;font-size:30px;overflow:hidden;border:1px solid var(--line)}
   .photo-preview img{width:100%;height:100%;object-fit:cover}
@@ -498,7 +512,7 @@
     <div class="store-toast" id="storeToast">⚠️ 저장에 실패했어요. 저장 공간이 부족하거나 브라우저가 저장을 막고 있을 수 있어요. 새로고침하기 전에 꼭 백업해 주세요.<button onclick="exportData()">⬇ 지금 백업</button></div>
     <div class="chat-head" id="chatHead" style="display:none">
       <button class="hamburger" onclick="toggleSidebar()">☰</button>
-      <div class="avatar" id="headAvatar">☕</div>
+      <div class="avatar" id="headAvatar" data-prof="main" title="프로필 보기">☕</div>
       <div class="head-meta">
         <div class="title-row">
           <div class="title" id="headTitle"></div>
@@ -580,6 +594,20 @@
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeMsgEdit()">취소</button>
       <button class="btn-primary" id="meSave" onclick="saveMsgEdit()">저장</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="pvOverlay">
+  <div class="modal prof-modal">
+    <div class="prof-photo" id="pvPhoto"></div>
+    <div class="prof-role" id="pvRole"></div>
+    <h2 id="pvName" style="margin-bottom:6px"></h2>
+    <div class="prof-intro" id="pvIntro"></div>
+    <div class="prof-note" id="pvNote"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="pvEditBtn" onclick="editFromProfile()">✏️ 수정</button>
+      <button class="btn-primary" onclick="closeProfile()">닫기</button>
     </div>
   </div>
 </div>
@@ -718,8 +746,18 @@
             <div class="memo-hint">대화 화면에서 내 메시지 옆에 표시돼요. 작게 압축해 브라우저에 저장됩니다.</div>
           </div>
         </div>
+      <div class="crop-ed" id="pCropEd" style="display:none">
+        <canvas id="pCropCanvas" width="440" height="440"></canvas>
+        <div class="crop-side">
+          <div class="memo-hint" style="margin:0 0 8px">사진을 끌어서 얼굴을 동그라미 안에 맞추세요.</div>
+          <label class="memo-hint" style="margin:0">확대</label>
+          <input type="range" id="pZoom" min="1" max="3" step="0.02" value="1">
+        </div>
+      </div>
+      <div class="memo-hint" id="pCropHint" style="display:none">예전에 올린 사진이라 위치를 바꿀 수 없어요. 위치를 맞추려면 사진을 한 번 다시 선택해 주세요.</div>
       </div>
       <div class="field"><label>이름 *</label><input type="text" id="pName" placeholder="예: 지민 (교환학생)"></div>
+      <div class="field"><label>한 줄 소개 (선택)</label><input type="text" id="pIntro" maxlength="120" placeholder="프로필을 눌렀을 때 보이는 짧은 소개. 비우면 설정 앞부분이 보여요."></div>
       <div class="field"><label>설정 *</label><textarea id="pDesc" style="min-height:110px" placeholder="예: 한국에서 온 22살 교환학생. 이 언어를 배운 지 6개월이라 서툴고 실수가 잦지만 열심히 하려고 한다. 낯을 가리지만 친해지면 수다스럽다. 매운 음식을 좋아하고 커피는 못 마신다."></textarea>
         <div class="memo-hint">국적·나이·직업 같은 배경, 언어 실력, 성격, 취향 등 상대가 알아줬으면 하는 것을 자유롭게 적으세요.</div>
       </div>
@@ -740,8 +778,18 @@
             <div class="memo-hint">작게 압축해 브라우저에 저장돼요. 없으면 이모지로 표시됩니다.</div>
           </div>
         </div>
+      <div class="crop-ed" id="chCropEd" style="display:none">
+        <canvas id="chCropCanvas" width="440" height="440"></canvas>
+        <div class="crop-side">
+          <div class="memo-hint" style="margin:0 0 8px">사진을 끌어서 얼굴을 동그라미 안에 맞추세요.</div>
+          <label class="memo-hint" style="margin:0">확대</label>
+          <input type="range" id="chZoom" min="1" max="3" step="0.02" value="1">
+        </div>
+      </div>
+      <div class="memo-hint" id="chCropHint" style="display:none">예전에 올린 사진이라 위치를 바꿀 수 없어요. 위치를 맞추려면 사진을 한 번 다시 선택해 주세요.</div>
       </div>
       <div class="field"><label>이름 *</label><input type="text" id="chName" placeholder="예: Emma"></div>
+      <div class="field"><label>한 줄 소개 (선택)</label><input type="text" id="chIntro" maxlength="120" placeholder="예: 동네 카페 사장. 커피 얘기만 나오면 눈이 반짝인다."></div>
       <div class="field"><label>키워드 (성격·특징)</label><input type="text" id="chKeywords" placeholder="예: 밝음, 수다스러움, 커피 덕후, 고양이 집사"></div>
       <div class="field"><label>배경 설정</label><textarea id="chBackground" placeholder="예: 시애틀 출신 27살. 대학에서 미술을 전공했지만 지금은 카페를 운영 중. 3년 전 이 동네로 이사 왔다."></textarea></div>
       <div class="field"><label>습관 · 말버릇</label><textarea id="chHabits" placeholder="예: 말끝에 'you know?'를 자주 붙임. 웃을 때 손뼉을 침. 생각할 때 머리카락을 만짐."></textarea></div>
@@ -1681,7 +1729,7 @@ function messageNode(m, idx, s){
   }else{
     const row=document.createElement('div'); row.className='row me';
     const photo = myPhoto(s);
-    if(photo) row.innerHTML = `<div class="avatar"><img src="${photo}" alt=""></div>`;
+    if(photo) row.innerHTML = `<div class="avatar" data-prof="me"><img src="${photo}" alt=""></div>`;
     const col=document.createElement('div'); col.className='bubble-col';
     const bub=document.createElement('div'); bub.className='bubble'; bub.innerHTML=userBubbleHtml(m.content);
     col.appendChild(bub); row.appendChild(col); wrap.appendChild(row);
@@ -3233,7 +3281,7 @@ function sceneNode(m){
 }
 
 /* ---------- character manager ---------- */
-let editingCharId = null, pendingPhoto = null;
+let editingCharId = null;
 
 function openChars(){ switchCharTab('chars'); $('charsOverlay').classList.add('show'); }
 function showCharList(){
@@ -3265,9 +3313,10 @@ function showCharList(){
 function openCharForm(id){
   editingCharId = id || null;
   const c = id ? characters.find(x=>x.id===id) : null;
-  pendingPhoto = c ? (c.photo||null) : null;
+  peLoad('char', c);
   $('charFormTitle').textContent = c ? '캐릭터 수정' : '새 캐릭터 만들기';
   $('chName').value = c?c.name:'';
+  $('chIntro').value = c?(c.intro||''):'';
   $('chKeywords').value = c?(c.keywords||''):'';
   $('chBackground').value = c?(c.background||''):'';
   $('chHabits').value = c?(c.habits||''):'';
@@ -3283,38 +3332,16 @@ function openCharForm(id){
     $('chLoreInfo').textContent = '캐릭터를 저장한 뒤 이 캐릭터만의 로어북을 만들 수 있어요.';
     $('btnChLore').style.display = 'none';
   }
-  renderPhotoPreview();
   $('charListView').style.display='none'; $('charFormView').style.display='block';
 }
-function renderPhotoPreview(){
-  $('chPhotoPreview').innerHTML = pendingPhoto ? `<img src="${pendingPhoto}" alt="">` : '🙂';
-}
-function clearPhoto(){ pendingPhoto=null; renderPhotoPreview(); }
+function clearPhoto(){ peClear('char'); }
 
 $('chPhotoInput').addEventListener('change', async e=>{
   const file = e.target.files[0]; e.target.value='';
   if(!file) return;
-  try{ pendingPhoto = await resizeImage(file, 192); renderPhotoPreview(); }
+  try{ await pePick('char', file); }
   catch(err){ alert('이미지를 읽지 못했어요. 다른 파일로 시도해 주세요.'); }
 });
-
-function resizeImage(file, size){
-  return new Promise((resolve, reject)=>{
-    const img = new Image();
-    img.onload = ()=>{
-      const c = document.createElement('canvas');
-      c.width = c.height = size;
-      const ctx = c.getContext('2d');
-      const scale = size / Math.min(img.width, img.height);
-      const dw = img.width*scale, dh = img.height*scale;
-      ctx.drawImage(img, (size-dw)/2, (size-dh)/2, dw, dh);
-      URL.revokeObjectURL(img.src);
-      resolve(c.toDataURL('image/jpeg', .82));
-    };
-    img.onerror = reject;
-    img.src = URL.createObjectURL(file);
-  });
-}
 
 function saveChar(){
   const name = $('chName').value.trim();
@@ -3328,7 +3355,8 @@ function saveChar(){
     voiceGender: charVoiceDraft.gender,
     voiceName: charVoiceDraft.voice,
     voicePitch: charVoiceDraft.pitch,
-    photo: pendingPhoto,
+    intro: $('chIntro').value.trim(),
+    ...peFields('char'),
   };
   if(editingCharId){
     const c = characters.find(x=>x.id===editingCharId);
@@ -3701,19 +3729,15 @@ function openPersonaForm(id){
   $('personaFormTitle').textContent = p ? '페르소나 수정' : '새 페르소나';
   $('pName').value = p?p.name:'';
   $('pDesc').value = p?(p.desc||''):'';
-  pendingPersonaPhoto = p ? (p.photo||null) : null;
-  renderPersonaPhoto();
+  $('pIntro').value = p?(p.intro||''):'';
+  peLoad('persona', p);
   $('personaListView').style.display='none'; $('personaFormView').style.display='block';
 }
-let pendingPersonaPhoto = null;
-function renderPersonaPhoto(){
-  $('pPhotoPreview').innerHTML = pendingPersonaPhoto ? `<img src="${pendingPersonaPhoto}" alt="">` : '🙋';
-}
-function clearPersonaPhoto(){ pendingPersonaPhoto = null; renderPersonaPhoto(); }
+function clearPersonaPhoto(){ peClear('persona'); }
 $('pPhotoInput').addEventListener('change', async e=>{
   const file = e.target.files[0]; e.target.value='';
   if(!file) return;
-  try{ pendingPersonaPhoto = await resizeImage(file, 192); renderPersonaPhoto(); }
+  try{ await pePick('persona', file); }
   catch(err){ alert('이미지를 읽지 못했어요. 다른 파일로 시도해 주세요.'); }
 });
 function savePersona(){
@@ -3723,13 +3747,150 @@ function savePersona(){
   if(!desc){ $('pDesc').focus(); return; }
   if(editingPersonaId){
     const p = personas.find(x=>x.id===editingPersonaId);
-    p.name=name; p.desc=desc; p.photo=pendingPersonaPhoto;
+    Object.assign(p, {name, desc, intro:$('pIntro').value.trim(), ...peFields('persona')});
     for(const s of sessions) if(s.personaId===editingPersonaId) s.personaProfile={name,desc};
   }else{
-    personas.push({id:'p'+Date.now().toString(36), name, desc, photo:pendingPersonaPhoto});
+    personas.push({id:'p'+Date.now().toString(36), name, desc, intro:$('pIntro').value.trim(), ...peFields('persona')});
   }
   save(); showPersonaList(); renderChat();
 }
+
+/* ---------- 프로필 사진: 원본(작게 줄인 것) + 위치·확대 → 동그란 썸네일 ----------
+   photo: 256px 정사각 썸네일(대화 화면 곳곳에서 사용), photoFull: 긴 변 900px 원본, photoCrop: {x,y,z} */
+const PE = {
+  char:    {pre:'ch', empty:'🙂', full:null, crop:null, thumb:null, img:null},
+  persona: {pre:'p',  empty:'🙋', full:null, crop:null, thumb:null, img:null},
+};
+function peLoad(k, obj){
+  const e = PE[k];
+  e.full = obj && obj.photoFull || null; e.crop = obj && obj.photoCrop ? {...obj.photoCrop} : null;
+  e.thumb = obj && obj.photo || null; e.img = null;
+  if(e.full){ const im = new Image(); im.onload = ()=>{ if(PE[k].full===e.full){ e.img = im; peDraw(k); } }; im.src = e.full; }
+  peDraw(k);
+}
+function peClear(k){ const e = PE[k]; e.full = e.crop = e.thumb = e.img = null; peDraw(k); }
+async function pePick(k, file){
+  const e = PE[k];
+  const full = await shrinkImage(file, 900);
+  const im = new Image();
+  await new Promise((res, rej)=>{ im.onload = res; im.onerror = rej; im.src = full; });
+  // 세로로 긴 사진은 얼굴이 보통 위쪽에 있어서 기본 위치를 조금 위로
+  e.full = full; e.img = im; e.thumb = null;
+  e.crop = {x:.5, y: im.height > im.width*1.15 ? .33 : .5, z:1};
+  peDraw(k);
+}
+function peRect(im, c){
+  const side = Math.min(im.width, im.height) / (c.z||1);
+  const cl = (v, max) => Math.max(0, Math.min(max, v));
+  const sx = cl(c.x*im.width - side/2, im.width - side), sy = cl(c.y*im.height - side/2, im.height - side);
+  return {sx, sy, side};
+}
+function peDraw(k){
+  const e = PE[k], P = e.pre;
+  const prev = $(P+'PhotoPreview'), ed = $(P+'CropEd'), hint = $(P+'CropHint');
+  if(e.img){
+    const r = peRect(e.img, e.crop);
+    e.crop.x = (r.sx + r.side/2)/e.img.width; e.crop.y = (r.sy + r.side/2)/e.img.height;   // 끝에 닿으면 멈추게
+    for(const cv of [$(P+'CropCanvas'), prev.querySelector('canvas') || (prev.innerHTML='<canvas width="144" height="144"></canvas>', prev.querySelector('canvas'))]){
+      const ctx = cv.getContext('2d'); ctx.clearRect(0,0,cv.width,cv.height);
+      ctx.drawImage(e.img, r.sx, r.sy, r.side, r.side, 0, 0, cv.width, cv.height);
+    }
+    ed.style.display = 'flex'; $(P+'Zoom').value = e.crop.z; hint.style.display = 'none';
+  }else{
+    prev.innerHTML = e.thumb ? `<img src="${e.thumb}" alt="">` : e.empty;
+    ed.style.display = 'none';
+    hint.style.display = (e.thumb && !e.full) ? 'block' : 'none';
+  }
+}
+function peThumb(k){
+  const e = PE[k];
+  if(!e.img) return e.thumb;
+  const r = peRect(e.img, e.crop), c = document.createElement('canvas');
+  c.width = c.height = 256;
+  c.getContext('2d').drawImage(e.img, r.sx, r.sy, r.side, r.side, 0, 0, 256, 256);
+  return c.toDataURL('image/jpeg', .85);
+}
+function peFields(k){ const e = PE[k]; return {photo: peThumb(k), photoFull: e.img ? e.full : null, photoCrop: e.img ? {...e.crop} : null}; }
+function shrinkImage(file, max){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const s = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width*s); c.height = Math.round(img.height*s);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      resolve(c.toDataURL('image/jpeg', .82));
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+// 끌어서 위치 옮기기 · 확대
+for(const k of Object.keys(PE)){
+  const P = PE[k].pre, cv = $(P+'CropCanvas');
+  let last = null;
+  cv.addEventListener('pointerdown', ev=>{ if(!PE[k].img) return; last = {x:ev.clientX, y:ev.clientY}; cv.setPointerCapture(ev.pointerId); ev.preventDefault(); });
+  cv.addEventListener('pointermove', ev=>{
+    const e = PE[k]; if(!last || !e.img) return;
+    const r = peRect(e.img, e.crop), per = r.side / cv.clientWidth;   // 화면 1px = 원본 몇 px
+    e.crop.x -= (ev.clientX - last.x) * per / e.img.width;
+    e.crop.y -= (ev.clientY - last.y) * per / e.img.height;
+    last = {x:ev.clientX, y:ev.clientY}; peDraw(k);
+  });
+  const end = ()=>{ last = null; };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  $(P+'Zoom').addEventListener('input', ev=>{ const e = PE[k]; if(!e.img) return; e.crop.z = +ev.target.value; peDraw(k); });
+}
+
+/* ---------- 프로필 보기: 대화 속 사진을 누르면 ---------- */
+function shortIntro(...texts){
+  const t = texts.filter(Boolean).join('. ').replace(/\s+/g,' ').trim();
+  if(!t) return '';
+  const two = (t.match(/[^.!?。！？]+[.!?。！？]?/g) || [t]).slice(0,2).map(x=>x.trim()).join(' ');
+  return two.length > 110 ? two.slice(0,108)+'…' : two;
+}
+function profileOf(s, who){
+  if(who==='main'){
+    const c = s.charId ? characters.find(x=>x.id===s.charId) : null;
+    if(c) return {role:'주연', name:c.name, photo:c.photo, full:c.photoFull, intro: c.intro || shortIntro(c.keywords, c.background), edit:()=>{ openChars(); openCharForm(c.id); }};
+    return {role:'주연', name:(s.charProfile && s.charProfile.name) || '상대 캐릭터', emoji:s.emoji, intro: shortIntro(s.character), edit:()=>openScene()};
+  }
+  if(who==='me'){
+    const p = s.personaId ? personas.find(x=>x.id===s.personaId) : null;
+    return {role:'나', name: p ? p.name : (s.personaProfile ? s.personaProfile.name : '나'), photo: p && p.photo, full: p && p.photoFull, emoji:'🙋',
+      intro: p ? (p.intro || shortIntro(p.desc)) : (s.personaProfile ? shortIntro(s.personaProfile.desc) : '페르소나 없이 나로 대화 중이에요.'),
+      note: s.personaNote ? '이 대화에서: '+s.personaNote : '',
+      edit: p ? ()=>{ openChars(); switchCharTab('personas'); openPersonaForm(p.id); } : ()=>openScene()};
+  }
+  if(who.startsWith('cast:')){
+    const m = (s.cast||[]).find(x=>x.key===who.slice(5)); if(!m) return null;
+    const c = m.charId ? characters.find(x=>x.id===m.charId) : null;
+    if(c) return {role:'조연', name:c.name, photo:c.photo, full:c.photoFull, intro: c.intro || shortIntro(c.keywords, c.background), edit:()=>{ openChars(); openCharForm(c.id); }};
+    return {role:'조연', name:m.name, intro: shortIntro(m.desc) || '한 줄 설명이 없어요.', letter:true, edit:()=>openCast(activeId)};
+  }
+  return null;
+}
+let profEdit = null;
+function openProfile(who){
+  const s = getSession(); if(!s) return;
+  const p = profileOf(s, who); if(!p) return;
+  const src = p.full || p.photo;
+  $('pvPhoto').className = 'prof-photo' + (src ? '' : ' none');
+  $('pvPhoto').innerHTML = src ? `<img src="${src}" alt="">` : (p.letter ? esc(p.name.charAt(0).toUpperCase()) : (p.emoji || '🙂'));
+  $('pvRole').textContent = p.role;
+  $('pvName').textContent = p.name;
+  $('pvIntro').textContent = p.intro || '';
+  $('pvNote').textContent = p.note || ''; $('pvNote').style.display = p.note ? 'block' : 'none';
+  profEdit = p.edit || null; $('pvEditBtn').style.display = profEdit ? '' : 'none';
+  $('pvOverlay').classList.add('show');
+}
+function closeProfile(){ $('pvOverlay').classList.remove('show'); }
+function editFromProfile(){ const f = profEdit; closeProfile(); if(f) f(); }
+document.addEventListener('click', ev=>{
+  const a = ev.target.closest('.avatar[data-prof]'); if(!a) return;
+  openProfile(a.dataset.prof);
+});
 
 /* ---------- settings ---------- */
 function syncProvUI(){
@@ -4198,13 +4359,13 @@ function dialogueRows(text, s){
   for(const part of splitSpeakers(text, s)){
     const row = document.createElement('div'); row.className = 'row them';
     if(part.speaker){
-      row.innerHTML = `<div class="avatar${part.speaker.photo?'':' letter'}">${castAvatar(part.speaker)}</div>`;
+      row.innerHTML = `<div class="avatar${part.speaker.photo?'':' letter'}" data-prof="cast:${esc(part.speaker.key||'')}">${castAvatar(part.speaker)}</div>`;
       const col = document.createElement('div'); col.className = 'bubble-col';
       col.innerHTML = `<div class="speaker">${esc(part.speaker.name)}</div>`;
       const bub = document.createElement('div'); bub.className = 'bubble cast'; bub.textContent = part.text;
       col.appendChild(bub); row.appendChild(col);
     }else{
-      row.innerHTML = `<div class="avatar">${avatarInner(s)}</div>`;
+      row.innerHTML = `<div class="avatar" data-prof="main">${avatarInner(s)}</div>`;
       const col = document.createElement('div'); col.className = 'bubble-col';
       const bub = document.createElement('div'); bub.className = 'bubble'; bub.textContent = part.text;
       col.appendChild(bub); row.appendChild(col);
