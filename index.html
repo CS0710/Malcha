@@ -923,7 +923,7 @@
     <div class="setup-help">
       <b>처음이라면 (인터넷 없이 동작하는 로컬 모델)</b><br>
       1. <code>ollama.com</code>에서 Ollama 설치 후 모델 받기 — 예: <code>ollama pull qwen3:8b</code> (사양이 낮은 노트북이면 <code>qwen3:1.7b</code>)<br>
-      2. 브라우저에서 접근을 허용한 상태로 실행:<br>
+      2. 브라우저에서 접근을 허용한 상태로 실행 (웹 주소로 쓰는 중이면 <code>*</code> 대신 <code>https://cs0710.github.io</code>도 돼요):<br>
       &nbsp;&nbsp;· macOS/Linux: <code>OLLAMA_ORIGINS="*" ollama serve</code><br>
       &nbsp;&nbsp;· Windows(PowerShell): <code>$env:OLLAMA_ORIGINS="*"; ollama serve</code><br>
       3. 위의 <b>연결 테스트</b> → 모델 선택 → 저장
@@ -975,8 +975,10 @@ const LEVEL_DESC = {
 /* ---------- state ----------
    주의: localStorage 키는 기존 대화·캐릭터 데이터 호환을 위해 'malbut_' 접두사를 유지합니다. */
 let settings = JSON.parse(localStorage.getItem('malbut_settings')||'null') || {url:'http://localhost:11434', model:''};
-// 폰 등에서 http://PC_IP:8420 으로 접속해 처음 실행하는 경우, Ollama 주소를 같은 PC로 자동 추정
-if(!localStorage.getItem('malbut_settings') && location.hostname && !['localhost','127.0.0.1'].includes(location.hostname)){
+// 폰 등에서 같은 와이파이의 PC 주소(http://192.168.x.x:8420)로 접속해 처음 실행하는 경우에만, Ollama 주소를 그 PC로 자동 추정
+// (웹 주소 cs0710.github.io 등으로 열었을 때는 추정하지 않음)
+const isLanHost = h => /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h) || /\.local$/.test(h);
+if(!localStorage.getItem('malbut_settings') && location.protocol==='http:' && isLanHost(location.hostname)){
   settings.url = `http://${location.hostname}:11434`;
 }
 let sessions = JSON.parse(localStorage.getItem('malbut_sessions')||'[]');
@@ -989,6 +991,8 @@ let activeId = localStorage.getItem('malbut_active') || null;
 let busy = false;
 function normalizeState(){
 if(settings.autoVocab === undefined) settings.autoVocab = true;
+// 예전 버전이 웹 주소를 Ollama 주소로 잘못 추정해 저장한 경우 되돌림
+if(!settings.url || /github\.io|\.pages\.dev|netlify\.app/i.test(settings.url)) settings.url = 'http://localhost:11434';
 if(settings.provider === undefined) Object.assign(settings, {provider:'local', oaiUrl:'', oaiKey:'', oaiModel:''});
 if(settings.noThink === undefined) settings.noThink = true;
 if(settings.lightMode === undefined) settings.lightMode = false;
