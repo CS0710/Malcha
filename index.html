@@ -295,6 +295,7 @@
   .photo-row{display:flex;align-items:center;gap:12px}
   .photo-preview{width:72px;height:72px;min-width:72px;border-radius:50%;background:#F0EDE6;display:flex;align-items:center;justify-content:center;font-size:30px;overflow:hidden;border:1px solid var(--line)}
   .photo-preview img{width:100%;height:100%;object-fit:cover}
+  .preset-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:7px}
   .memo-hint{font-size:11.5px;color:var(--sub);margin-top:5px;line-height:1.5}
   .scene-mark{display:flex;flex-direction:column;align-items:center;gap:2px;margin:14px auto;max-width:86%;text-align:center;font-size:12px;color:var(--chat-sub)}
   .scene-mark span{font-weight:700;padding:3px 12px;border-radius:999px;background:rgba(0,0,0,.05)}
@@ -964,7 +965,12 @@
       </div>
       <div class="field"><label>API 주소 (OpenAI 호환)</label>
         <input type="text" id="setOaiUrl" placeholder="https://openrouter.ai/api/v1">
-        <div class="memo-hint">예시 — OpenRouter: <b>https://openrouter.ai/api/v1</b> · Groq: <b>https://api.groq.com/openai/v1</b> · Gemini: <b>https://generativelanguage.googleapis.com/v1beta/openai</b> · OpenAI: <b>https://api.openai.com/v1</b></div>
+        <div class="preset-row"><span class="memo-hint" style="margin:0">눌러서 채우기</span>
+          <button type="button" class="btn-mini" onclick="usePreset('Gemini','https://generativelanguage.googleapis.com/v1beta/openai')">Gemini</button>
+          <button type="button" class="btn-mini" onclick="usePreset('Groq','https://api.groq.com/openai/v1')">Groq</button>
+          <button type="button" class="btn-mini" onclick="usePreset('OpenRouter','https://openrouter.ai/api/v1')">OpenRouter</button>
+          <button type="button" class="btn-mini" onclick="usePreset('Cerebras','https://api.cerebras.ai/v1')">Cerebras</button>
+        </div>
       </div>
       <div class="field"><label>API 키</label>
         <input type="password" id="setOaiKey" placeholder="sk-…" autocomplete="off">
@@ -3795,6 +3801,12 @@ function commitProfileForm(){
   p.url = $('setOaiUrl').value.trim();
   p.key = $('setOaiKey').value.trim();
   p.model = $('setOaiModel').value.trim();
+}
+function usePreset(name, url){
+  $('setOaiUrl').value = url;
+  const n = $('profName').value.trim();
+  if(!n || /^API \d+$/.test(n)){ $('profName').value = name; renameProfile(name); }
+  $('oaiTestResult').textContent = '';
 }
 function switchProfile(id){ commitProfileForm(); draftActive = id; loadProfileForm(); buildProfSelect(); }
 function renameProfile(v){
