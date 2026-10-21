@@ -988,6 +988,11 @@
       <div class="memo-hint">qwen3 같은 생각 모드 모델이 답하기 전에 보이지 않는 "생각"을 길게 하지 않게 해요. 대화 품질은 거의 같고 훨씬 빨라져요.</div>
     </div>
     </div>
+    <div class="field"><label>🧩 보조 작업 모델 <span style="font-weight:500;color:var(--sub)">— 교정·단어·힌트·해석·요약·리포트</span></label>
+      <select id="setHelperConn"></select>
+      <input type="text" id="setHelperModel" style="margin-top:6px" placeholder="모델명 (비우면 그 연결에 설정된 모델)" autocomplete="off">
+      <div class="memo-hint">답장은 위의 대화 모델이 쓰고, 나머지 작업만 여기서 고른 모델이 맡아요. 예: 답장은 <code>gemini-2.5-flash</code>, 교정은 더 가볍고 무료 한도가 넉넉한 <code>gemini-2.5-flash-lite</code>. 보조 모델이 실패하면 대화 모델로 다시 시도해요.</div>
+    </div>
     <div class="field"><label class="toggle-line" style="font-size:13px;color:var(--ink)"><input type="checkbox" id="setLight"> 🍃 가벼운 모드 (답장만 받기)</label>
       <div class="memo-hint">자동 교정·단어 수집·미션 자동 판정을 끄고 답장만 받아요. 느린 컴퓨터에서 로컬 모델을 쓸 때 추천해요. 교정은 내 메시지 아래 <b>📝 교정받기</b> 버튼으로 필요할 때만 받을 수 있어요.</div>
     </div>
@@ -1402,18 +1407,46 @@ async function maybeCompress(s){
 
 /* ---------- Ollama API ---------- */
 const thinkUnsupported = {};   // think 옵션을 거부한 모델 기억 (새로고침하면 초기화)
-async function ollamaChat(messages, onDelta){
-  if(isOnline()) return oaiChat(messages, onDelta);
-  const url = settings.url.replace(/\/$/,'')+'/api/chat';
+/* 작업별 모델: 답장('reply')은 항상 대화 모델, 나머지(교정·단어·힌트·해석·요약·리포트 등)는 '보조 모델' 설정을 따름 */
+function mainBackend(){
+  return isOnline() ? {kind:'online', url:settings.oaiUrl, key:settings.oaiKey, model:settings.oaiModel}
+                    : {kind:'local', url:settings.url, model:settings.model};
+}
+function backendFor(task){
+  const main = mainBackend(), hp = settings.helper;
+  if(task==='reply' || !hp || (!hp.conn && !hp.model)) return main;
+  let b = main;
+  if(hp.conn==='local') b = {kind:'local', url:settings.url, model:settings.model};
+  else if(hp.conn && hp.conn!=='same'){
+    const p = settings.profiles.find(x=>x.id===hp.conn);
+    if(p && p.url && p.key) b = {kind:'online', url:p.url, key:p.key, model:p.model};
+  }
+  if(hp.model) b = {...b, model:hp.model};
+  return b.model ? b : main;
+}
+const sameBackend = (a,b)=> a.kind===b.kind && a.url===b.url && a.model===b.model && (a.key||'')===(b.key||'');
+async function ollamaChat(messages, onDelta, task){
+  const b = backendFor(task||'analysis'), main = mainBackend();
+  try{ return await chatWith(b, messages, onDelta); }
+  catch(e){
+    if(sameBackend(b, main)) throw e;
+    const out = await chatWith(main, messages, onDelta);   // 보조 모델이 실패하면 대화 모델로 한 번 더
+    lastApiError = null;   // 대신 성공했으니 보조 모델 오류 안내는 지움
+    return out;
+  }
+}
+function chatWith(b, messages, onDelta){ return b.kind==='online' ? oaiChat(messages, onDelta, b) : localChat(messages, onDelta, b); }
+async function localChat(messages, onDelta, b){
+  const url = b.url.replace(/\/$/,'')+'/api/chat';
   // keep_alive: 모델을 메모리에 30분 유지 (느린 PC에서 매번 다시 불러오는 시간 절약)
-  const base = {model:settings.model, messages, stream:true, keep_alive:'30m'};
+  const base = {model:b.model, messages, stream:true, keep_alive:'30m'};
   const post = body => fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
-  const tryThink = settings.noThink && !thinkUnsupported[settings.model];
+  const tryThink = settings.noThink && !thinkUnsupported[b.model];
   let res;
   try{ res = await post(tryThink ? {...base, think:false} : base); }
   catch(e){ lastApiError = {status:0, detail:String(e), at:Date.now(), local:true}; e.status = 0; throw e; }
   // 구버전 Ollama나 생각 모드가 없는 모델이 think 옵션을 거부하면 옵션 없이 다시 시도하고, 다음부터는 생략
-  if(!res.ok && tryThink && res.status===400){ thinkUnsupported[settings.model] = true; res = await post(base); }
+  if(!res.ok && tryThink && res.status===400){ thinkUnsupported[b.model] = true; res = await post(base); }
   if(!res.ok) throw await apiError(res);
   const reader = res.body.getReader(); const dec = new TextDecoder();
   let full='', buf='';
@@ -1459,11 +1492,12 @@ async function fetchWithRetry(url, opts){
     await sleep(Math.min(isFinite(ra) ? ra*1000 : waits[i], 20000));
   }
 }
-async function oaiChat(messages, onDelta){
-  const res = await fetchWithRetry(settings.oaiUrl.replace(/\/$/,'')+'/chat/completions', {
+async function oaiChat(messages, onDelta, b){
+  b = b || mainBackend();
+  const res = await fetchWithRetry(b.url.replace(/\/$/,'')+'/chat/completions', {
     method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+settings.oaiKey},
-    body:JSON.stringify({model:settings.oaiModel, messages, stream:true})
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+b.key},
+    body:JSON.stringify({model:b.model, messages, stream:true})
   });
   const reader = res.body.getReader(); const dec = new TextDecoder();
   let full='', buf='';
@@ -1803,7 +1837,7 @@ async function requestReply(s){
       const cleaned = partial.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
       if(cleaned) holder.appendChild(messageNodeLite(cleaned, s));
       scrollBottom();
-    });
+    }, 'reply');
     const finalText = full.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
     s.messages.push({role:'assistant', content:finalText||full});
     save(); renderChat(); renderSidebar();
@@ -3587,6 +3621,9 @@ function openSettings(){
   $('setUrl').value = settings.url;
   draftProfiles = settings.profiles.map(p=>({...p}));
   draftActive = activeProfile().id;
+  $('setHelperConn').value = '';
+  buildHelperSelect((settings.helper && settings.helper.conn) || 'same');
+  $('setHelperModel').value = (settings.helper && settings.helper.model) || '';
   loadProfileForm(); buildProfSelect();
   $('oaiTestResult').textContent = '';
   syncProvUI();
@@ -3619,6 +3656,15 @@ function buildProfSelect(){
     sel.appendChild(o);
   }
   sel.value = draftActive;
+  buildHelperSelect();
+}
+function buildHelperSelect(keep){
+  const sel = $('setHelperConn'); if(!sel) return;
+  const cur = keep || sel.value || (settings.helper && settings.helper.conn) || 'same';
+  sel.innerHTML = '<option value="same">대화와 같은 연결</option>'
+    + draftProfiles.map(p=>`<option value="${p.id}">☁️ ${esc(p.name||'이름 없음')}${p.model ? ' — '+esc(p.model) : ''}</option>`).join('')
+    + `<option value="local">💻 로컬 (Ollama${settings.model ? ' — '+esc(settings.model) : ''})</option>`;
+  sel.value = [...sel.options].some(o=>o.value===cur) ? cur : 'same';
 }
 function loadProfileForm(){
   const p = draftProf();
@@ -3639,7 +3685,7 @@ function commitProfileForm(){
 function switchProfile(id){ commitProfileForm(); draftActive = id; loadProfileForm(); buildProfSelect(); }
 function renameProfile(v){
   const p = draftProf(); if(!p) return;
-  p.name = v;
+  p.name = v; buildHelperSelect();
   const o = $('profSelect').querySelector(`option[value="${p.id}"]`);
   if(o) o.textContent = (v||'이름 없음') + (p.model ? ' — '+p.model : '');
 }
@@ -3730,6 +3776,8 @@ function saveSettings(){
   settings.autoTTS = $('setAutoTTS').checked;
   settings.noThink = $('setNoThink').checked;
   settings.lightMode = $('setLight').checked;
+  const hc = $('setHelperConn').value || 'same', hm = $('setHelperModel').value.trim();
+  if(hc==='same' && !hm) delete settings.helper; else settings.helper = {conn:hc, model:hm};
   settings.reviewInChat = $('setReviewChat').checked;
   settings.reportEvery = +$('setReportEvery').value;
   settings.pexelsKey = $('setPexels').value.trim();
