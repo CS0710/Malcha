@@ -145,6 +145,15 @@
   .report-nudge .rn-go{background:var(--accent);color:#fff}
   .hint-box{background:#F2F6F4;border:1px solid #D8E4DE;border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.7;margin-bottom:10px;white-space:pre-wrap;position:relative}
   .hint-box .close-hint{position:absolute;top:6px;right:8px;color:var(--sub);font-size:13px}
+  .hint-box .h-title{font-size:12px;font-weight:700;color:var(--sub);margin:0 22px 6px 0;white-space:normal}
+  .hint-opt{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-top:1px solid #DFE8E3;white-space:normal}
+  .h-title + .hint-opt{border-top:0}
+  .hint-opt .ho-body{flex:1;min-width:0}
+  .hint-opt .ho-text{font-size:14px;color:var(--ink);font-weight:600;word-break:break-word}
+  .hint-opt .ho-note{font-size:12px;color:var(--sub);margin-top:1px}
+  .hint-opt button{flex:none;font-size:12px;font-weight:600;color:var(--accent);background:#fff;border:1px solid #D8E4DE;border-radius:8px;padding:4px 8px;white-space:nowrap}
+  .hint-opt button:hover{background:var(--accent-soft)}
+  .btn-hint.ko{background:var(--accent-soft);font-size:13px;font-weight:700;color:var(--accent)}
   .input-row{display:flex;gap:8px;align-items:flex-end}
   .btn-hint{min-width:38px;height:42px;border-radius:12px;background:#F1F3F3;font-size:17px;transition:background .15s}
   .btn-mic{min-width:38px;height:42px;border-radius:12px;background:#F1F3F3;font-size:17px;transition:background .15s}
@@ -491,9 +500,9 @@
         <div class="report-nudge" id="reportNudge" style="display:none"></div>
         <div class="hint-box" id="hintBox" style="display:none"><button class="close-hint" onclick="hideHint()">✕</button><div id="hintContent"></div></div>
         <div class="input-row">
-          <button class="btn-hint" id="btnHint" title="뭐라고 답할지 힌트 받기" onclick="getHints()">💡</button>
+          <button class="btn-hint" id="btnHint" title="뭐라고 답할지 힌트 받기" onclick="hintOrTranslate()">💡</button>
           <button class="btn-mic" id="btnMic" title="말로 입력하기 (대화 언어로 받아써요)" onclick="toggleMic()" style="display:none">🎤</button>
-          <textarea id="input" rows="1" placeholder="메시지를 입력하세요…"></textarea>
+          <textarea id="input" rows="1" placeholder="메시지 입력… (한국어로 써도 돼요)"></textarea>
           <button class="btn-send" id="btnSend" onclick="sendMessage()">전송</button>
         </div>
       </div>
@@ -1499,6 +1508,7 @@ function parseBlocks(text){
 }
 
 function renderChat(){
+  updateHintBtn();
   const s = getSession();
   const has = !!s;
   renderReview(); renderMissionBar(); renderReportNudge();
@@ -1582,7 +1592,7 @@ async function sendMessage(){
   const ta = $('input'); const text = ta.value.trim();
   if(!text) return;
   if(!apiModel()){ openSettings(); return; }
-  ta.value=''; autoGrow(); hideHint(); hideBanner();
+  ta.value=''; autoGrow(); updateHintBtn(); hideHint(); hideBanner();
   const msg = settings.lightMode ? {role:'user', content:text, at:Date.now()} : {role:'user', content:text, at:Date.now(), review:{status:'pending'}};
   s.messages.push(msg);
   save(); renderChat(); renderReview();
@@ -1780,19 +1790,91 @@ function showInterp(idx){
   }
 }
 
+/* ---------- 💡 힌트 / 🔤 "영어로 뭐라고 해?" ---------- */
+const HANGUL_RE = /[가-힣ㄱ-ㆎ]/;
+let hintOpts = [];
+function updateHintBtn(){
+  const b = $('btnHint'); if(!b) return;
+  const s = getSession();
+  const ko = HANGUL_RE.test($('input').value);
+  b.classList.toggle('ko', ko);
+  b.textContent = ko ? (s ? langOf(s.lang).label : 'EN') : '💡';
+  b.title = ko ? `쓴 한국어를 ${s ? langOf(s.lang).name : '영어'}로 어떻게 말하는지 보기` : '뭐라고 답할지 힌트 받기';
+}
+function hintOrTranslate(){ HANGUL_RE.test(ta.value) ? translateInput() : getHints(); }
+function recentForHelp(s, n){
+  return s.messages.filter(m=>!m.hidden).slice(-(n||6))
+    .map(m=>(m.role==='user'?'Learner: ':'Character: ')+m.content.replace(/\s+/g,' ').trim()).join('\n');
+}
+function renderHintOpts(title, opts){
+  hintOpts = opts;
+  $('hintContent').innerHTML = `<div class="h-title">${esc(title)}</div>` + opts.map((o,i)=>
+    `<div class="hint-opt"><div class="ho-body"><div class="ho-text">${esc(o.text)}</div>${o.note?`<div class="ho-note">${esc(o.note)}</div>`:''}</div><button onclick="useHintOpt(${i})">✍️ 이걸로 쓰기</button></div>`).join('');
+}
+function useHintOpt(i){
+  const o = hintOpts[i]; if(!o) return;
+  ta.value = o.text; autoGrow(); updateHintBtn(); hideHint();
+  ta.focus(); try{ ta.setSelectionRange(ta.value.length, ta.value.length); }catch(e){}
+}
+// "1. sentence — 뜻" 형식의 힌트를 고를 수 있는 목록으로
+function parseHintLines(text){
+  const out = [];
+  for(const line of text.split('\n')){
+    const m = line.match(/^\s*\d+[.)]\s*(.+?)\s+[—–-]{1,2}\s+(.+)$/);
+    if(m) out.push({text:m[1].replace(/^["“*]+|["”*]+$/g,'').trim(), note:m[2].trim()});
+  }
+  return out;
+}
 async function getHints(){
   const s = getSession(); if(!s || busy) return;
   if(!apiModel()){ openSettings(); return; }
   busy=true; const box=$('hintBox'), content=$('hintContent');
   box.style.display='block'; content.textContent='힌트 생성 중… 💭'; scrollBottom();
   const L = langOf(s.lang);
-  const recent = s.messages.filter(m=>!m.hidden).slice(-6).map(m=>(m.role==='user'?'Learner: ':'Character: ')+m.content).join('\n');
+  const recent = recentForHelp(s, 6);
   try{
     const full = await ollamaChat([
       {role:'system', content:`You help a Korean learner practicing ${L.native}. Answer in the exact format requested, nothing else.`},
       {role:'user', content:`Conversation so far:\n${recent}\n\nSuggest 3 natural replies the learner could send next in ${L.native}, from simple to more advanced. Format each as:\n1. <${L.native} sentence> — <한국어 뜻>`}
     ], partial=>{ content.textContent = partial.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim(); });
-    content.textContent = full.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
+    const text = full.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
+    const opts = parseHintLines(text);
+    if(opts.length) renderHintOpts('💡 이렇게 답해 볼 수 있어요', opts);
+    else content.textContent = text;
+  }catch(e){ box.style.display='none'; connFailHelp(); }
+  finally{ busy=false; }
+}
+async function translateInput(){
+  const s = getSession(); if(!s || busy) return;
+  if(!apiModel()){ openSettings(); return; }
+  const text = ta.value.trim(); if(!text) return;
+  busy=true; const box=$('hintBox'), content=$('hintContent');
+  const L = langOf(s.lang);
+  box.style.display='block'; content.textContent=`${L.name}로 바꾸는 중… 💭`; scrollBottom();
+  const chName = s.charProfile && s.charProfile.name;
+  try{
+    const full = await ollamaChat([
+      {role:'system', content:`You help a Korean learner say what they mean in natural ${L.native} during a roleplay chat. Output ONLY valid JSON, no other text.`},
+      {role:'user', content:`Situation: ${s.scenario||''}
+${chName ? 'The learner is talking to: '+chName+'\n' : ''}Conversation so far:
+${recentForHelp(s, 6)||'(just started)'}
+
+The learner wants to send this message (written in Korean, maybe mixed with some ${L.native}):
+"""${text}"""
+
+Give 3 ways to say it in ${L.native} that fit this moment and relationship:
+1) simple and easy (for a ${LEVEL_KO[s.level]||'중급'} learner),
+2) the most natural way a native speaker would say it here,
+3) a version with a different nuance or tone (more casual, polite, playful, or emotional — whichever fits).
+Keep the learner's meaning. Write each as the learner's own chat message: first person, no narration, no quotes.
+Return JSON: {"options":[{"text":"${L.native} message","note":"한국어로 짧게: 어떤 느낌인지, 언제 쓰는지"}]}`}
+    ], ()=>{});
+    const j = extractJson(full.replace(/<think>[\s\S]*?(<\/think>|$)/,''));
+    const opts = (j && Array.isArray(j.options) ? j.options : [])
+      .map(o=>({text:String(o && o.text || '').trim(), note:String(o && o.note || '').trim()}))
+      .filter(o=>o.text && !HANGUL_RE.test(o.text)).slice(0,4);
+    if(opts.length) renderHintOpts(`🔤 "${text.length>40 ? text.slice(0,40)+'…' : text}" → ${L.name}로는`, opts);
+    else content.textContent = '표현을 만들지 못했어요. 한 번 더 눌러 주세요.';
   }catch(e){ box.style.display='none'; connFailHelp(); }
   finally{ busy=false; }
 }
@@ -4115,7 +4197,7 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape' && $('sidebar').cl
 window.addEventListener('resize', ()=>{ if(!isNarrow()) toggleSidebar(false); });
 const ta=$('input');
 function autoGrow(){ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px'; }
-ta.addEventListener('input', autoGrow);
+ta.addEventListener('input', ()=>{ autoGrow(); updateHintBtn(); });
 ta.addEventListener('keydown', e=>{
   if(e.key==='Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); sendMessage(); }
 });
