@@ -308,6 +308,31 @@
   .tabs{flex-wrap:wrap}
   .due-badge{margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:#E5484D;color:#fff;font-size:11px;font-weight:800;align-items:center;justify-content:center}
   .tab-n{display:inline-block;margin-left:4px;padding:0 6px;border-radius:8px;background:#E5484D;color:#fff;font-size:10.5px;line-height:17px}
+  .streak-line{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:8px 10px;margin-bottom:6px;border-radius:10px;background:var(--accent-soft);font-size:12.5px;color:var(--accent-dk);text-align:left}
+  .streak-line b{font-weight:700;white-space:nowrap}
+  .streak-line span{color:var(--sub);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .st-tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}
+  .st-tile{border:1px solid var(--line);border-radius:12px;padding:10px 10px 9px;background:var(--panel);display:flex;flex-direction:column;gap:2px;min-width:0}
+  .st-tile span{font-size:11.5px;color:var(--sub);font-weight:600}
+  .st-tile b{font-size:20px;color:var(--ink);font-variant-numeric:tabular-nums}
+  .st-tile small{font-size:10.5px;color:var(--sub)}
+  .st-chart-head{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:8px}
+  .st-legend{font-size:11.5px;color:var(--sub);display:flex;align-items:center;gap:5px}
+  .st-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-left:6px}
+  .st-legend .lm,.st-bar .m{background:var(--accent)}
+  .st-legend .lr,.st-bar .r{background:color-mix(in srgb, var(--accent) 40%, #fff)}
+  .st-chart{display:flex;align-items:flex-end;gap:4px;height:150px;padding-bottom:2px;margin-bottom:16px}
+  .st-col{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;min-width:0}
+  .st-val{font-size:10px;color:var(--sub);height:14px;font-variant-numeric:tabular-nums}
+  .st-bar{flex:1;width:100%;max-width:22px;display:flex;flex-direction:column;justify-content:flex-end;gap:1px;border-bottom:1px solid var(--line)}
+  .st-bar .stk{width:100%;display:flex;flex-direction:column;border-radius:3px 3px 0 0;overflow:hidden}
+  .st-day{font-size:10px;color:var(--sub);margin-top:4px;white-space:nowrap}
+  .st-col.today .st-day{color:var(--accent-dk);font-weight:700}
+  .st-more{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .st-more div{display:flex;justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12.5px}
+  .st-more span{color:var(--sub)}
+  .st-more b{font-variant-numeric:tabular-nums}
+  @media (max-width:560px){ .st-tiles{grid-template-columns:repeat(2,1fr)} .st-more{grid-template-columns:1fr} }
   .mk-stat{border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:10px;background:var(--accent-soft);font-size:13px;line-height:1.6}
   .mk-stat b{display:block;font-size:15px;color:var(--accent-dk)}
   .mk-stat span{color:var(--sub)}
@@ -447,6 +472,7 @@
     <button class="btn-new" onclick="openNewChat()">＋ 새 대화</button>
     <div class="sess-list" id="sessList"></div>
     <div class="side-foot">
+      <button class="streak-line" id="streakLine" style="display:none" onclick="openStudy('stats')" title="학습 기록 보기"></button>
       <button class="btn-settings" onclick="openStudy()">📖 학습 노트 · 단어장<span class="due-badge" id="dueBadge" style="display:none" title="오늘 복습할 카드"></span></button>
       <button class="btn-settings" onclick="openChars()">👤 캐릭터 관리</button>
       <button class="btn-settings" onclick="openLore()">📜 로어북</button>
@@ -744,7 +770,8 @@
       <button id="tabReview" onclick="switchStudyTab('review')">🔁 복습<span class="tab-n" id="tabReviewN" style="display:none"></span></button>
       <button id="tabVocab" class="sel" onclick="switchStudyTab('vocab')">📚 단어장</button>
       <button id="tabMistakes" onclick="switchStudyTab('mistakes')">✍️ 실수 노트</button>
-      <button id="tabReports" onclick="switchStudyTab('reports')">📊 리포트 모음</button>
+      <button id="tabReports" onclick="switchStudyTab('reports')">📊 리포트</button>
+      <button id="tabStats" onclick="switchStudyTab('stats')">📈 기록</button>
     </div>
 
     <div id="reviewView" style="display:none">
@@ -785,6 +812,13 @@
       <div class="modal-actions">
         <button class="btn-ghost" onclick="exportVocab()">⬇ 단어장 저장</button>
         <button class="btn-ghost" id="btnQuiz" onclick="toggleQuiz()">🃏 퀴즈 모드</button>
+        <button class="btn-primary" onclick="document.getElementById('studyOverlay').classList.remove('show')">닫기</button>
+      </div>
+    </div>
+
+    <div id="statsView" style="display:none">
+      <div class="study-scroll" id="statsBody"></div>
+      <div class="modal-actions">
         <button class="btn-primary" onclick="document.getElementById('studyOverlay').classList.remove('show')">닫기</button>
       </div>
     </div>
@@ -1492,7 +1526,7 @@ function connFailHelp(){
 
 /* ---------- render: sidebar ---------- */
 function renderSidebar(){
-  refreshDueBadge();
+  refreshDueBadge(); renderStreakLine();
   const el = $('sessList'); el.innerHTML='';
   if(!sessions.length){ el.innerHTML = '<div style="padding:16px 12px;font-size:12.5px;color:var(--sub);line-height:1.7">아직 대화가 없어요.<br>＋ 새 대화로 시작해 보세요!</div>'; return; }
   for(const s of sessions){
@@ -2217,6 +2251,83 @@ function refreshDueBadge(){
   b.textContent = n > 99 ? '99+' : n;
 }
 
+/* ---------- 📈 학습 기록 · 연속 학습일 ----------
+   따로 저장하지 않고 이미 있는 데이터에서 계산:
+   - 보낸 메시지의 시각(m.at)
+   - 복습 카드를 채점한 날(srs.h: 날짜 목록, 카드마다 최근 60개) */
+function dayKey(t){ const d = new Date(t); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function dayShift(key, n){ const [y,m,d] = key.split('-').map(Number); return dayKey(new Date(y, m-1, d+n, 12).getTime()); }
+function activityByDay(){
+  const days = {};   // key → {msgs, reviews}
+  const bump = (k, f) => { (days[k] = days[k] || {msgs:0, reviews:0})[f]++; };
+  for(const s of sessions) for(const m of s.messages){
+    if(m.role==='user' && !m.hidden && m.at) bump(dayKey(m.at), 'msgs');
+  }
+  const addH = o => { if(o && o.srs && Array.isArray(o.srs.h)) for(const k of o.srs.h) bump(k, 'reviews'); };
+  for(const v of vocab) addH(v);
+  for(const x of mistakeMessages()) addH(x.m.review);
+  return days;
+}
+function streakInfo(days){
+  days = days || activityByDay();
+  const today = dayKey(Date.now());
+  const active = k => !!days[k];
+  // 오늘 아직 안 했으면 어제까지의 연속을 보여줌 (오늘 하면 이어짐)
+  let k = active(today) ? today : dayShift(today, -1), cur = 0;
+  while(active(k)){ cur++; k = dayShift(k, -1); }
+  let best = 0, run = 0, prev = null;
+  for(const d of Object.keys(days).sort()){
+    run = (prev && dayShift(prev, 1)===d) ? run+1 : 1;
+    best = Math.max(best, run); prev = d;
+  }
+  return {cur, best, today: days[today] || {msgs:0, reviews:0}, doneToday: active(today), any: Object.keys(days).length>0};
+}
+function renderStreakLine(){
+  const el = $('streakLine'); if(!el) return;
+  const st = streakInfo();
+  if(!st.any){ el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  const t = st.today;
+  el.innerHTML = st.cur
+    ? `<b>🔥 ${st.cur}일 연속</b><span>${st.doneToday ? `오늘 ${t.msgs ? '문장 '+t.msgs : ''}${t.msgs && t.reviews ? ' · ' : ''}${t.reviews ? '복습 '+t.reviews : ''}` : '오늘도 이어가요!'}</span>`
+    : `<b>🌱 오늘 다시 시작해요</b><span>최고 기록 ${st.best}일</span>`;
+}
+function renderStats(){
+  const days = activityByDay(), st = streakInfo(days), today = dayKey(Date.now());
+  const sum = n => { let m=0, r=0, act=0; for(let i=0;i<n;i++){ const d = days[dayShift(today,-i)]; if(d){ m+=d.msgs; r+=d.reviews; act++; } } return {m, r, act}; };
+  const w = sum(7);
+  const acc = accuracy(Date.now()-7*DAY, Date.now()+1);
+  const tiles = [
+    ['🔥 연속 학습', st.cur ? `${st.cur}일` : '0일', st.best ? `최고 ${st.best}일` : ''],
+    ['📅 이번 주', `${w.act}/7일`, '최근 7일 중 학습한 날'],
+    ['💬 보낸 문장', `${w.m}`, '최근 7일'],
+    ['🔁 복습 카드', `${w.r}`, '최근 7일'],
+  ];
+  let html = `<div class="st-tiles">${tiles.map(([a,b,c])=>`<div class="st-tile"><span>${a}</span><b>${b}</b><small>${c}</small></div>`).join('')}</div>`;
+  // 최근 14일 막대
+  const cols = [];
+  for(let i=13;i>=0;i--){ const k = dayShift(today,-i); cols.push({k, d: days[k] || {msgs:0, reviews:0}}); }
+  const max = Math.max(1, ...cols.map(c=>c.d.msgs + c.d.reviews));
+  html += `<div class="st-chart-head"><b>최근 14일</b><span class="st-legend"><i class="lm"></i>보낸 문장 <i class="lr"></i>복습</span></div>
+    <div class="st-chart">${cols.map(c=>{
+      const tot = c.d.msgs + c.d.reviews, h = v => (v/max*100).toFixed(1)+'%';
+      const [,mm,dd] = c.k.split('-');
+      return `<div class="st-col${c.k===today?' today':''}" title="${+mm}/${+dd} · 문장 ${c.d.msgs} · 복습 ${c.d.reviews}">
+        <div class="st-val">${tot||''}</div>
+        <div class="st-bar"><div class="stk" style="height:${h(tot)}"><div class="r" style="flex:${c.d.reviews}"></div><div class="m" style="flex:${c.d.msgs}"></div></div></div>
+        <div class="st-day">${c.k===today ? '오늘' : +dd}</div></div>`;
+    }).join('')}</div>`;
+  const mk = mistakeMessages().length;
+  html += `<div class="st-more">
+    <div><span>📚 단어장</span><b>${vocab.length}개</b></div>
+    <div><span>✍️ 실수 노트</span><b>${mk}문장</b></div>
+    <div><span>🎯 최근 7일 정확도</span><b>${acc.all>=3 ? acc.pct+'%' : '—'}</b></div>
+    <div><span>⏰ 오늘 복습할 카드</span><b>${dueCards().length}장</b></div>
+  </div>`;
+  if(!st.any) html = `<div class="rev-empty">아직 기록이 없어요.<br>대화하거나 복습하면 날마다 여기에 쌓이고, 매일 이어가면 🔥 연속 학습일이 늘어나요.</div>`;
+  $('statsBody').innerHTML = html;
+}
+
 /* ---------- 실수 노트 ---------- */
 function accuracy(from, to){
   let ok = 0, all = 0;
@@ -2327,7 +2438,8 @@ function gradeCard(g){
     else if(g===1) target.srs = {box:cur.box, due: now + Math.max(1, Math.round(SRS_DAYS[cur.box]/2))*DAY};
     else { const b = Math.min(cur.box+1, SRS_DAYS.length-1); target.srs = {box:b, due: now + SRS_DAYS[b]*DAY}; }
     target.srs.last = now;
-    save();
+    target.srs.h = [...(cur.h||[]), dayKey(now)].slice(-60);   // 학습 기록용
+    save(); renderStreakLine();
   }
   if(g===0 && !c.again) rvQueue.push({...c, again:true});   // 모르는 카드는 이번 회차 끝에 한 번 더
   rvDone++; rvRevealed = false;
@@ -2522,16 +2634,16 @@ function downloadReport(){
 /* ---------- study drawer: 단어장 + 리포트 모음 ---------- */
 let quizMode = false, quizQueue = [], quizRevealed = false;
 
-function openStudy(){
+function openStudy(tab){
   quizMode = false; $('quizBox').style.display='none'; $('vocabList').style.display='block';
   $('btnQuiz').textContent = '🃏 퀴즈 모드';
   $('autoVocabToggle').checked = !!settings.autoVocab;
   buildVocabLangFilter();
-  switchStudyTab(dueCards().length ? 'review' : 'vocab');
+  switchStudyTab(tab || (dueCards().length ? 'review' : 'vocab'));
   $('studyOverlay').classList.add('show');
 }
 function switchStudyTab(tab){
-  for(const [t,btn,view] of [['review','tabReview','reviewView'],['vocab','tabVocab','vocabView'],['mistakes','tabMistakes','mistakesView'],['reports','tabReports','reportsView']]){
+  for(const [t,btn,view] of [['review','tabReview','reviewView'],['vocab','tabVocab','vocabView'],['mistakes','tabMistakes','mistakesView'],['reports','tabReports','reportsView'],['stats','tabStats','statsView']]){
     $(btn).classList.toggle('sel', tab===t);
     $(view).style.display = tab===t ? 'block' : 'none';
   }
@@ -2540,6 +2652,7 @@ function switchStudyTab(tab){
   if(tab==='vocab') renderVocab();
   else if(tab==='reports') renderReportsList();
   else if(tab==='mistakes') renderMistakes();
+  else if(tab==='stats') renderStats();
   else { rvQueue = []; rvDone = 0; rvRevealed = false; renderReviewCard(); }
 }
 function setAutoVocab(v){ settings.autoVocab = v; save(); }
