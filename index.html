@@ -1421,6 +1421,7 @@ RULES:
 - Interleave short narration describing the scene, actions, or your character's inner feelings. Narration must also be in ${L.native}.
 - FORMAT: put every narration on its own line wrapped in single asterisks, e.g. *She smiles and wipes the counter.* Dialogue lines are plain text with no quotes and no name prefixes.
 - Per reply: 0–2 narration lines and 1–4 dialogue sentences. Keep it chat-like, not essay-like.
+- NEVER repeat yourself: do not reuse or closely paraphrase lines, actions, or questions from your earlier replies. Every reply must add something new.
 - ${PACE_RULE[s.pace||'normal'] || PACE_RULE.normal}
 - The learner may write their own character's actions in *asterisks*, sometimes in Korean (e.g. *커피를 한 모금 마신다*). Treat them as real actions in the scene and react naturally. Never decide the learner's actions, words, or feelings for them.
 - Never break character, never explain grammar, never use Korean unless the learner explicitly asks for help.
@@ -1492,19 +1493,30 @@ function backendFor(task){
 const sameBackend = (a,b)=> a.kind===b.kind && a.url===b.url && a.model===b.model && (a.key||'')===(b.key||'');
 async function ollamaChat(messages, onDelta, task){
   const b = backendFor(task||'analysis'), main = mainBackend();
-  try{ return await chatWith(b, messages, onDelta); }
+  try{ return await chatWith(b, messages, onDelta, task); }
   catch(e){
     if(sameBackend(b, main)) throw e;
-    const out = await chatWith(main, messages, onDelta);   // 보조 모델이 실패하면 대화 모델로 한 번 더
+    const out = await chatWith(main, messages, onDelta, task);   // 보조 모델이 실패하면 대화 모델로 한 번 더
     lastApiError = null;   // 대신 성공했으니 보조 모델 오류 안내는 지움
     return out;
   }
 }
-function chatWith(b, messages, onDelta){ return b.kind==='online' ? oaiChat(messages, onDelta, b) : localChat(messages, onDelta, b); }
-async function localChat(messages, onDelta, b){
+function chatWith(b, messages, onDelta, task){ return b.kind==='online' ? oaiChat(messages, onDelta, b) : localChat(messages, onDelta, b, task); }
+/* 로컬 모델 옵션
+   - num_ctx: Ollama 기본값(2048~4096)은 지시문+로어+대화를 다 못 담아서 앞부분(캐릭터 설정!)이 잘려 나가고,
+     그러면 작은 모델이 같은 말을 반복함 → 넉넉히 8192. 작업마다 값이 다르면 모델을 다시 불러오므로 항상 같은 값.
+   - 답장: 반복 억제(presence/repeat penalty). Qwen3 권장값(생각 끔): temperature 0.7, top_p 0.8, top_k 20
+   - 교정·단어 등 JSON 작업: 낮은 temperature, 반복 억제 없음(JSON 키는 반복돼야 함) */
+const LOCAL_CTX = 8192;
+function localOptions(model, task){
+  if(task !== 'reply') return {num_ctx: LOCAL_CTX, temperature: 0.3};
+  const qwen = /qwen/i.test(model||'');
+  return {num_ctx: LOCAL_CTX, temperature: qwen ? 0.7 : 0.8, top_p: qwen ? 0.8 : 0.9, ...(qwen ? {top_k: 20} : {}), repeat_penalty: 1.1, presence_penalty: 1.0};
+}
+async function localChat(messages, onDelta, b, task){
   const url = b.url.replace(/\/$/,'')+'/api/chat';
   // keep_alive: 모델을 메모리에 30분 유지 (느린 PC에서 매번 다시 불러오는 시간 절약)
-  const base = {model:b.model, messages, stream:true, keep_alive:'30m'};
+  const base = {model:b.model, messages, stream:true, keep_alive:'30m', options: localOptions(b.model, task)};
   const post = body => fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const tryThink = settings.noThink && !thinkUnsupported[b.model];
   let res;
@@ -1902,7 +1914,18 @@ async function collectVocab(s, text){
   }catch(e){ /* 조용히 무시 */ }
 }
 
-async function requestReply(s){
+/* 같은 말 반복 감지: 최근 답장 3개와 단어 겹침이 크면 반복으로 봄 */
+function replyWords(t){ return new Set(stripPhotoTags(t).replace(/\*[^*]*\*/g,' ').toLowerCase().match(/[\p{L}\p{N}']+/gu) || []); }
+function looksRepeated(s, text){
+  const w = replyWords(text); if(w.size < 4) return false;
+  const prev = s.messages.filter(m=>m.role==='assistant').slice(-3);
+  return prev.some(m=>{
+    const p = replyWords(m.content); if(p.size < 4) return false;
+    let both = 0; for(const x of w) if(p.has(x)) both++;
+    return both / (w.size + p.size - both) >= 0.6;
+  });
+}
+async function requestReply(s, attempt){
   busy = true; $('btnSend').disabled = true;
   const inner = $('msgInner');
   const holder = document.createElement('div');
@@ -1918,6 +1941,14 @@ async function requestReply(s){
     const finalText = full.replace(/<think>[\s\S]*?(<\/think>|$)/,'').trim();
     // 빈 답장(안전 필터로 막힘 등)은 저장하지 않고 안내만
     if(!stripPhotoTags(finalText).trim()){ holder.remove(); showBanner(BLOCKED_TEXT); return; }
+    // 앞 답장과 거의 같으면 저장하지 않고 한 번만 자동으로 다시 받기
+    if(!attempt && looksRepeated(s, finalText)){
+      holder.remove();
+      const prevRedo = s.redo;
+      s.redo = {old: finalText, note: 'this repeats what you already said — say something new and move the story forward'};
+      try{ await requestReply(s, 1); } finally{ if(prevRedo) s.redo = prevRedo; else delete s.redo; }
+      return;
+    }
     s.messages.push({role:'assistant', content:finalText});
     save(); renderChat(); renderSidebar();
     if(isOnline() && /content_filter|safety/i.test(lastFinishReason)) showBanner('✂️ 모델이 답장을 중간에 멈췄어요. 안전 필터에 걸렸을 수 있어요. 마지막 답장 아래 🔄로 다시 받을 수 있어요.');
